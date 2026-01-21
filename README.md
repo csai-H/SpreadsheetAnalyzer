@@ -1,5 +1,6 @@
 # SpreadsheetAnalyzer
 
+> WUST毕设-电子表格可视化工具
 > 基于 Qt6 的现代数据分析与可视化工具
 
 ## 项目简介
@@ -139,8 +140,8 @@ MIT License
 
 ## 联系方式
 
-- 项目主页：[GitHub](https://github.com/your-username/SpreadsheetAnalyzer)
-- 问题反馈：[Issues](https://github.com/your-username/SpreadsheetAnalyzer/issues)
+- 项目主页：[GitHub](https://github.com/csai-H/SpreadsheetAnalyzer)
+- 问题反馈：[Issues](https://github.com/csai-H/SpreadsheetAnalyzer/issues)
 
 ---
 
