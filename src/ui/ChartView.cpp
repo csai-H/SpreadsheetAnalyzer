@@ -14,6 +14,11 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPdfWriter>
+#include <QPainter>
+#include <QPageSize>
+#include <QDir>
+#include <QImage>
 
 ChartView::ChartView(QWidget *parent)
     : QWidget(parent)
@@ -23,6 +28,7 @@ ChartView::ChartView(QWidget *parent)
 {
     auto *mainLayout = new QVBoxLayout(this);
 
+    // 先创建工具栏
     setupToolbar();
 
     // 设置图表视图
@@ -37,7 +43,9 @@ ChartView::~ChartView() = default;
 
 void ChartView::setupToolbar()
 {
-    auto *toolbarLayout = new QHBoxLayout();
+    auto *toolbarWidget = new QWidget(this);
+    auto *toolbarLayout = new QHBoxLayout(toolbarWidget);
+    toolbarLayout->setContentsMargins(0, 0, 0, 0);
 
     // 图表类型选择
     auto *typeLabel = new QLabel("图表类型:");
@@ -64,13 +72,35 @@ void ChartView::setupToolbar()
     m_refreshButton = new QPushButton("刷新");
     toolbarLayout->addWidget(m_refreshButton);
 
+    // 分辨率设置
+    auto *resLabel = new QLabel("分辨率:");
+    toolbarLayout->addWidget(resLabel);
+
+    m_widthSpinBox = new QSpinBox();
+    m_widthSpinBox->setRange(400, 4000);
+    m_widthSpinBox->setValue(1200);
+    m_widthSpinBox->setSuffix(" px");
+    m_widthSpinBox->setToolTip("导出图片的宽度");
+    toolbarLayout->addWidget(m_widthSpinBox);
+
+    m_heightSpinBox = new QSpinBox();
+    m_heightSpinBox->setRange(300, 3000);
+    m_heightSpinBox->setValue(800);
+    m_heightSpinBox->setSuffix(" px");
+    m_heightSpinBox->setToolTip("导出图片的高度");
+    toolbarLayout->addWidget(m_heightSpinBox);
+
     // 保存按钮
-    m_saveButton = new QPushButton("保存图片");
+    m_saveButton = new QPushButton("导出图片");
+    m_saveButton->setToolTip("将图表导出为图片文件");
     toolbarLayout->addWidget(m_saveButton);
 
     toolbarLayout->addStretch();
 
-    layout()->addItem(toolbarLayout);
+    // 将工具栏添加到主布局
+    if (auto *mainLayout = qobject_cast<QVBoxLayout*>(layout())) {
+        mainLayout->insertWidget(0, toolbarWidget);
+    }
 
     // 连接信号
     connect(m_chartTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -191,20 +221,95 @@ void ChartView::onTitleChanged(const QString &title)
 
 void ChartView::onSaveImage()
 {
+    // 获取用户选择的分辨率
+    int width = m_widthSpinBox->value();
+    int height = m_heightSpinBox->value();
+
     QString fileName = QFileDialog::getSaveFileName(
         this,
-        "保存图表",
+        "导出图表",
         QString(),
-        "PNG图片 (*.png);;JPEG图片 (*.jpg);;PDF文件 (*.pdf)"
+        "PNG图片 (*.png);;JPEG图片 (*.jpg);;PDF文件 (*.pdf);;SVG矢量图 (*.svg)"
     );
 
-    if (!fileName.isEmpty()) {
-        QPixmap pixmap = m_chartView->grab();
-        if (pixmap.save(fileName)) {
-            QMessageBox::information(this, "成功", "图表已保存");
-        } else {
-            QMessageBox::warning(this, "错误", "保存图表失败");
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    bool success = false;
+    QString fileType = fileName.right(3).toLower();
+
+    if (fileType == "pdf") {
+        // 导出为 PDF
+        QPdfWriter writer(fileName);
+        writer.setPageSize(QPageSize(QSizeF(width * 0.75, height * 0.75), QPageSize::Point));
+        writer.setPageMargins(QMarginsF(0, 0, 0, 0));
+
+        QPainter painter(&writer);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+
+        // 获取图表并渲染到 PDF
+        QRectF rect(0, 0, writer.width(), writer.height());
+        m_currentChart->scene()->render(&painter, rect);
+
+        success = true;
+    }
+    else if (fileType == "svg") {
+        // 导出为 SVG（矢量图，可无限缩放）
+        // 注意：QtCharts 原生不支持 SVG，我们使用高分辨率 PNG 作为替代
+        QMessageBox::information(this, "提示", "SVG 格式暂不支持，将导出为高分辨率 PNG");
+
+        // 创建高分辨率图片
+        QImage image(width * 2, height * 2, QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+
+        // 渲染图表到图片
+        m_currentChart->scene()->render(&painter, image.rect());
+        painter.end();
+
+        // 保存图片
+        QString pngFileName = fileName;
+        pngFileName.replace(".svg", ".png");
+        success = image.save(pngFileName, "PNG", 100);
+
+        if (success) {
+            fileName = pngFileName;
         }
+    }
+    else {
+        // PNG 或 JPEG
+        QImage image(width, height, QImage::Format_ARGB32);
+        image.fill(Qt::white);  // 白色背景
+
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+
+        // 渲染图表到图片
+        m_currentChart->scene()->render(&painter, image.rect());
+        painter.end();
+
+        // 根据文件类型保存
+        if (fileType == "jpg") {
+            success = image.save(fileName, "JPEG", 95);  // 95% 质量
+        } else {
+            success = image.save(fileName, "PNG", 100);  // 最高质量
+        }
+    }
+
+    if (success) {
+        QMessageBox::information(this, "导出成功",
+            QString("图表已导出到:\n%1\n\n尺寸: %2 x %3 像素")
+                .arg(QDir::toNativeSeparators(fileName))
+                .arg(width)
+                .arg(height));
+    } else {
+        QMessageBox::warning(this, "导出失败", "无法导出图表，请检查文件路径和权限");
     }
 }
 

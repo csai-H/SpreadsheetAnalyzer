@@ -6,6 +6,7 @@
 #include "FilterDialog.h"
 #include "CalcColumnDialog.h"
 #include "../core/ExcelExporter.h"
+#include "../core/TableData.h"
 #include <QApplication>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -17,10 +18,16 @@
 #include <QMimeData>
 #include <QUrl>
 #include <QSettings>
+#include <QFileInfo>
+#include <QAction>
+#include <QMenu>
+#include <QCursor>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_undoStack(new QUndoStack(this))
+    , m_currentDocumentIndex(-1)
     , m_statisticsDialog(nullptr)
 {
     setWindowTitle("SpreadsheetAnalyzer");
@@ -41,6 +48,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_currentFilePath.clear();
     m_unsavedChanges = false;
     updateWindowTitle();
+
+    // 加载最近文件列表
+    loadRecentFiles();
 }
 
 MainWindow::~MainWindow() = default;
@@ -65,6 +75,12 @@ void MainWindow::createMenuBar()
     // 文件菜单
     m_fileMenu = menuBar()->addMenu("文件(&F)");
     m_fileMenu->addAction("打开(&O)...", QKeySequence::Open, this, &MainWindow::onOpenFile);
+
+    // 最近文件子菜单
+    m_recentFilesMenu = m_fileMenu->addMenu("最近文件(&R)");
+    updateRecentFilesMenu();  // 初始化最近文件菜单
+
+    m_fileMenu->addSeparator();
     m_fileMenu->addAction("保存(&S)", QKeySequence::Save, this, &MainWindow::onSaveFile);
     m_fileMenu->addAction("另存为(&A)...", this, &MainWindow::onSaveAsFile);
     m_fileMenu->addAction("导出为Excel(&E)...", this, &MainWindow::onExportAsExcel);
@@ -148,6 +164,7 @@ void MainWindow::createSidebar()
     layout->addWidget(fileLabel);
 
     m_fileListWidget = new QListWidget();
+    m_fileListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_fileListWidget);
 
     // 图表列选择
@@ -219,6 +236,12 @@ void MainWindow::connectSignals()
 
     connect(m_tabWidget, &QTabWidget::currentChanged,
             this, &MainWindow::onCurrentTabChanged);
+
+    // 文档列表信号
+    connect(m_fileListWidget, &QListWidget::currentRowChanged,
+            this, &MainWindow::onDocumentListItemChanged);
+    connect(m_fileListWidget, &QListWidget::customContextMenuRequested,
+            this, &MainWindow::onDocumentListCloseRequested);
 }
 
 bool MainWindow::openFile(const QString &filePath)
@@ -233,6 +256,26 @@ bool MainWindow::openFile(const QString &filePath)
     m_progressBar->setVisible(false);
 
     if (success) {
+        // 检查是否已打开
+        int existingIndex = findDocument(filePath);
+        if (existingIndex >= 0) {
+            // 文档已打开，切换到该文档
+            switchToDocument(existingIndex);
+            m_statusLabel->setText("文件已打开，切换到该文档");
+            return true;
+        }
+
+        // 创建文档对象
+        auto doc = QSharedPointer<DocumentInfo>::create();
+        doc->filePath = filePath;
+        doc->fileName = QFileInfo(filePath).fileName();
+        doc->unsavedChanges = false;
+
+        // 添加新文档
+        m_documents.append(doc);
+        m_currentDocumentIndex = m_documents.size() - 1;
+
+        // 更新界面
         m_currentFilePath = filePath;
         m_unsavedChanges = false;
         updateWindowTitle();
@@ -240,6 +283,12 @@ bool MainWindow::openFile(const QString &filePath)
 
         QFileInfo fileInfo(filePath);
         m_fileInfoLabel->setText(fileInfo.fileName());
+
+        // 更新文档列表
+        updateDocumentList();
+
+        // 添加到最近文件列表
+        addRecentFile(filePath);
 
         return true;
     } else {
@@ -618,5 +667,358 @@ void MainWindow::dropEvent(QDropEvent *event)
             QString filePath = urls.first().toLocalFile();
             openFile(filePath);
         }
+    }
+}
+
+// ==================== 最近文件管理 ====================
+
+void MainWindow::updateRecentFilesMenu()
+{
+    // 清空当前菜单
+    m_recentFilesMenu->clear();
+
+    if (m_recentFiles.isEmpty()) {
+        // 没有最近文件
+        QAction *emptyAction = m_recentFilesMenu->addAction("(无)");
+        emptyAction->setEnabled(false);
+    } else {
+        // 添加最近文件列表
+        for (int i = 0; i < m_recentFiles.size(); ++i) {
+            QString filePath = m_recentFiles.at(i);
+            QFileInfo fileInfo(filePath);
+
+            // 显示文件名和完整路径
+            QString actionText = QString("&%1 %2").arg(i + 1).arg(fileInfo.fileName());
+            QAction *action = m_recentFilesMenu->addAction(actionText);
+
+            // 使用文件路径作为数据
+            action->setData(filePath);
+            action->setStatusTip(filePath);  // 鼠标悬停时显示完整路径
+
+            connect(action, &QAction::triggered, this, &MainWindow::onOpenRecentFile);
+        }
+
+        // 添加分隔线
+        m_recentFilesMenu->addSeparator();
+
+        // 添加"清除最近文件"动作
+        QAction *clearAction = m_recentFilesMenu->addAction("清除最近文件(&C)");
+        connect(clearAction, &QAction::triggered, this, &MainWindow::onClearRecentFiles);
+    }
+}
+
+void MainWindow::addRecentFile(const QString &filePath)
+{
+    // 规范化路径
+    QString canonicalPath = QFileInfo(filePath).canonicalFilePath();
+
+    if (canonicalPath.isEmpty()) {
+        return;  // 文件不存在
+    }
+
+    // 移除已存在的相同路径
+    m_recentFiles.removeAll(canonicalPath);
+
+    // 添加到列表开头
+    m_recentFiles.prepend(canonicalPath);
+
+    // 限制列表大小
+    while (m_recentFiles.size() > MAX_RECENT_FILES) {
+        m_recentFiles.removeLast();
+    }
+
+    // 更新菜单并保存
+    updateRecentFilesMenu();
+    saveRecentFiles();
+}
+
+void MainWindow::loadRecentFiles()
+{
+    QSettings settings("SpreadsheetAnalyzer", "Settings");
+    m_recentFiles = settings.value("recentFiles").toStringList();
+
+    // 验证文件是否存在，移除不存在的文件
+    m_recentFiles.erase(
+        std::remove_if(m_recentFiles.begin(), m_recentFiles.end(),
+            [](const QString &path) {
+                return !QFileInfo::exists(path);
+            }),
+        m_recentFiles.end()
+    );
+
+    updateRecentFilesMenu();
+}
+
+void MainWindow::saveRecentFiles()
+{
+    QSettings settings("SpreadsheetAnalyzer", "Settings");
+    settings.setValue("recentFiles", m_recentFiles);
+}
+
+void MainWindow::clearRecentFiles()
+{
+    m_recentFiles.clear();
+    updateRecentFilesMenu();
+    saveRecentFiles();
+}
+
+void MainWindow::onOpenRecentFile()
+{
+    QAction *action = qobject_cast<QAction*>(sender());
+    if (!action) {
+        return;
+    }
+
+    QString filePath = action->data().toString();
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    // 检查文件是否存在
+    if (!QFileInfo::exists(filePath)) {
+        auto reply = QMessageBox::question(
+            this,
+            "文件不存在",
+            "该文件已被移动或删除。\n是否要从最近文件列表中移除？",
+            QMessageBox::Yes | QMessageBox::No
+        );
+
+        if (reply == QMessageBox::Yes) {
+            m_recentFiles.removeAll(filePath);
+            updateRecentFilesMenu();
+            saveRecentFiles();
+        }
+        return;
+    }
+
+    // 打开文件
+    openFile(filePath);
+}
+
+void MainWindow::onClearRecentFiles()
+{
+    auto reply = QMessageBox::question(
+        this,
+        "清除最近文件",
+        "确定要清除所有最近文件记录吗？",
+        QMessageBox::Yes | QMessageBox::No
+    );
+
+    if (reply == QMessageBox::Yes) {
+        clearRecentFiles();
+    }
+}
+
+// ==================== 文档管理 ====================
+
+void MainWindow::updateDocumentList()
+{
+    // 阻止信号防止触发切换
+    m_fileListWidget->blockSignals(true);
+    m_fileListWidget->clear();
+
+    for (int i = 0; i < m_documents.size(); ++i) {
+        const auto &doc = m_documents[i];
+        QString displayText = doc->fileName;
+
+        // 标记未保存的文档
+        if (doc->unsavedChanges) {
+            displayText += " *";
+        }
+
+        // 标记当前文档
+        if (i == m_currentDocumentIndex) {
+            displayText = "▸ " + displayText;
+        }
+
+        m_fileListWidget->addItem(displayText);
+    }
+
+    // 恢复选中状态
+    if (m_currentDocumentIndex >= 0 && m_currentDocumentIndex < m_fileListWidget->count()) {
+        m_fileListWidget->setCurrentRow(m_currentDocumentIndex);
+    }
+
+    m_fileListWidget->blockSignals(false);
+}
+
+int MainWindow::findDocument(const QString &filePath)
+{
+    QString canonicalPath = QFileInfo(filePath).canonicalFilePath();
+
+    for (int i = 0; i < m_documents.size(); ++i) {
+        if (m_documents[i]->filePath == canonicalPath) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+bool MainWindow::switchToDocument(int index)
+{
+    if (index < 0 || index >= m_documents.size()) {
+        return false;
+    }
+
+    // 切换到新文档
+    m_currentDocumentIndex = index;
+    auto *newDoc = m_documents[index].data();
+
+    // 重新加载文件（简单方案，会从文件读取数据）
+    m_dataTableView->loadFile(newDoc->filePath);
+
+    // 更新界面
+    m_currentFilePath = newDoc->filePath;
+    m_unsavedChanges = newDoc->unsavedChanges;
+    updateWindowTitle();
+
+    QFileInfo fileInfo(newDoc->filePath);
+    m_fileInfoLabel->setText(fileInfo.fileName());
+
+    // 更新图表列选择列表
+    if (m_chartTypeWidget) {
+        m_chartTypeWidget->clear();
+        auto *data = m_dataTableView->tableData();
+        for (int col = 0; col < data->columnCount(); ++col) {
+            m_chartTypeWidget->addItem(data->header(col));
+        }
+        if (newDoc->currentChartColumn >= 0 && newDoc->currentChartColumn < data->columnCount()) {
+            m_chartTypeWidget->setCurrentRow(newDoc->currentChartColumn);
+        }
+    }
+
+    // 更新文档列表显示
+    updateDocumentList();
+
+    m_statusLabel->setText(QString("已切换到: %1").arg(newDoc->fileName));
+
+    return true;
+}
+
+void MainWindow::closeDocument(int index)
+{
+    if (index < 0 || index >= m_documents.size()) {
+        return;
+    }
+
+    auto *doc = m_documents[index].data();
+
+    // 检查是否有未保存的更改
+    if (doc->unsavedChanges) {
+        auto reply = QMessageBox::question(
+            this,
+            "关闭文档",
+            QString("文档 '%1' 有未保存的更改，是否保存？").arg(doc->fileName),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
+        );
+
+        if (reply == QMessageBox::Save) {
+            // 切换到该文档并保存
+            int oldIndex = m_currentDocumentIndex;
+            switchToDocument(index);
+            saveFile();
+            switchToDocument(oldIndex);
+        } else if (reply == QMessageBox::Cancel) {
+            return;
+        }
+    }
+
+    // 移除文档
+    m_documents.removeAt(index);
+
+    // 如果关闭的是当前文档，切换到其他文档
+    if (index == m_currentDocumentIndex) {
+        if (m_documents.isEmpty()) {
+            // 没有文档了
+            m_currentDocumentIndex = -1;
+            m_currentFilePath.clear();
+            m_unsavedChanges = false;
+            updateWindowTitle();
+            m_fileInfoLabel->setText("无文件");
+            m_statusLabel->setText("无打开的文档");
+        } else {
+            // 切换到前一个文档
+            int newIndex = (index > 0) ? index - 1 : 0;
+            switchToDocument(newIndex);
+        }
+    } else if (index < m_currentDocumentIndex) {
+        // 如果关闭的文档在当前文档之前，更新索引
+        m_currentDocumentIndex--;
+    }
+
+    updateDocumentList();
+}
+
+void MainWindow::closeAllDocuments()
+{
+    while (!m_documents.isEmpty()) {
+        closeDocument(0);
+    }
+}
+
+DocumentInfo* MainWindow::currentDocument()
+{
+    if (m_currentDocumentIndex >= 0 && m_currentDocumentIndex < m_documents.size()) {
+        return m_documents[m_currentDocumentIndex].data();
+    }
+    return nullptr;
+}
+
+void MainWindow::onDocumentListItemChanged(int currentRow)
+{
+    if (currentRow >= 0 && currentRow < m_documents.size()) {
+        if (currentRow != m_currentDocumentIndex) {
+            switchToDocument(currentRow);
+        }
+    }
+}
+
+void MainWindow::onDocumentListCloseRequested()
+{
+    // 获取当前鼠标位置
+    QPoint pos = m_fileListWidget->mapFromGlobal(QCursor::pos());
+
+    // 获取点击的项
+    QListWidgetItem *item = m_fileListWidget->itemAt(pos);
+
+    if (!item) {
+        return;
+    }
+
+    int row = m_fileListWidget->row(item);
+
+    // 显示右键菜单
+    QMenu menu(this);
+    QAction *closeAction = menu.addAction("关闭");
+    QAction *closeOthersAction = menu.addAction("关闭其他");
+    menu.addSeparator();
+    QAction *closeAllAction = menu.addAction("关闭全部");
+
+    QAction *selected = menu.exec(m_fileListWidget->mapToGlobal(pos));
+
+    if (selected == closeAction) {
+        closeDocument(row);
+    } else if (selected == closeOthersAction) {
+        // 关闭除当前文档外的所有文档
+        QList<int> toClose;
+        for (int i = 0; i < m_documents.size(); ++i) {
+            if (i != row) {
+                toClose.append(i);
+            }
+        }
+        // 从后往前关闭，避免索引问题
+        for (int i = toClose.size() - 1; i >= 0; --i) {
+            closeDocument(toClose[i]);
+        }
+    } else if (selected == closeAllAction) {
+        closeAllDocuments();
+    }
+}
+
+void MainWindow::onCloseCurrentDocument()
+{
+    if (m_currentDocumentIndex >= 0) {
+        closeDocument(m_currentDocumentIndex);
     }
 }

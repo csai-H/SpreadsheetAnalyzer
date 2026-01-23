@@ -396,6 +396,23 @@ QChart* ChartHelper::createBoxPlotChart(const ChartData& data, const ChartStyle&
     }
 
     chart->addSeries(series);
+
+    // 设置坐标轴
+    auto* categoryAxis = new QBarCategoryAxis();
+    if (!data.series.isEmpty()) {
+        categoryAxis->append(data.series[0].name);
+    }
+    categoryAxis->setTitleText(data.xAxisTitle.isEmpty() ? "类别" : data.xAxisTitle);
+    chart->addAxis(categoryAxis, Qt::AlignBottom);
+
+    auto* valueAxis = new QValueAxis();
+    valueAxis->setTitleText(data.yAxisTitle.isEmpty() ? "数值" : data.yAxisTitle);
+    valueAxis->setGridLineVisible(style.showYAxisGrid);
+    chart->addAxis(valueAxis, Qt::AlignLeft);
+
+    series->attachAxis(categoryAxis);
+    series->attachAxis(valueAxis);
+
     applyStyle(chart, style);
 
     return chart;

@@ -98,9 +98,9 @@ bool DataTableView::loadFile(const QString &filePath)
         m_model->setRowCount(m_tableData->rowCount());
         m_model->setColumnCount(m_tableData->columnCount());
 
-        // 设置表头（显示为数字）
+        // 设置表头（使用 TableData 中的表头）
         for (int col = 0; col < m_tableData->columnCount(); ++col) {
-            m_model->setHeaderData(col, Qt::Horizontal, QString::number(col + 1));
+            m_model->setHeaderData(col, Qt::Horizontal, m_tableData->header(col));
         }
 
         // 填充数据
@@ -134,9 +134,9 @@ bool DataTableView::loadFile(const QString &filePath)
         m_model->setRowCount(m_tableData->rowCount());
         m_model->setColumnCount(m_tableData->columnCount());
 
-        // 设置表头（显示为数字）
+        // 设置表头（使用 TableData 中的表头）
         for (int col = 0; col < m_tableData->columnCount(); ++col) {
-            m_model->setHeaderData(col, Qt::Horizontal, QString::number(col + 1));
+            m_model->setHeaderData(col, Qt::Horizontal, m_tableData->header(col));
         }
 
         // 填充数据

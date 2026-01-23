@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QLabel>
+#include <QSpinBox>
 
 #include "core/TableData.h"
 #include "visualization/ChartTypes.h"
@@ -53,6 +54,8 @@ private:
     QLineEdit *m_titleEdit;
     QPushButton *m_saveButton;
     QPushButton *m_refreshButton;
+    QSpinBox *m_widthSpinBox;
+    QSpinBox *m_heightSpinBox;
 };
 
 #endif // CHARTVIEW_H
