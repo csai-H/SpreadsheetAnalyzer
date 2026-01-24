@@ -51,7 +51,6 @@ endif()
 
 # 包含目录
 include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(${CMAKE_SOURCE_DIR}/src/third_party)
 
 # 源文件
 set(SOURCES
