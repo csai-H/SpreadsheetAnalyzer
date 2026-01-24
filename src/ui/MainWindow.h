@@ -141,6 +141,9 @@ private:
     void closeAllDocuments();
     DocumentInfo* currentDocument();
 
+    // 状态栏更新
+    void updateDataInfoLabel();  // 更新行列数显示
+
     // 组件
     QTabWidget *m_tabWidget;
     DataTableView *m_dataTableView;
@@ -164,6 +167,7 @@ private:
     QLabel *m_statusLabel;
     QLabel *m_fileInfoLabel;
     QLabel *m_selectionInfoLabel;
+    QLabel *m_dataInfoLabel;  // 显示行列数
     QProgressBar *m_progressBar;
 
     // 侧边栏

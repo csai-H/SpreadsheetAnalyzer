@@ -145,6 +145,11 @@ void MainWindow::createStatusBar()
     m_statusLabel = new QLabel("就绪");
     m_fileInfoLabel = new QLabel();
     m_selectionInfoLabel = new QLabel();
+    m_selectionInfoLabel->setMinimumWidth(300);  // 增加宽度以显示统计信息
+    m_selectionInfoLabel->setStyleSheet("QLabel { color: #0066cc; font-weight: bold; }");  // 蓝色加粗
+    m_dataInfoLabel = new QLabel("0 行 × 0 列");  // 显示行列数
+    m_dataInfoLabel->setMinimumWidth(100);
+    m_dataInfoLabel->setAlignment(Qt::AlignRight);
     m_progressBar = new QProgressBar();
     m_progressBar->setVisible(false);
     m_progressBar->setMaximumWidth(150);
@@ -152,6 +157,7 @@ void MainWindow::createStatusBar()
     statusBar()->addWidget(m_statusLabel, 1);
     statusBar()->addPermanentWidget(m_fileInfoLabel);
     statusBar()->addPermanentWidget(m_selectionInfoLabel);
+    statusBar()->addPermanentWidget(m_dataInfoLabel);  // 添加行列数标签
     statusBar()->addPermanentWidget(m_progressBar);
 }
 
@@ -286,6 +292,9 @@ bool MainWindow::openFile(const QString &filePath)
 
         // 更新文档列表
         updateDocumentList();
+
+        // 更新状态栏行列数
+        updateDataInfoLabel();
 
         // 添加到最近文件列表
         addRecentFile(filePath);
@@ -566,11 +575,14 @@ void MainWindow::updateWindowTitle()
 void MainWindow::onDataChanged()
 {
     setUnsavedChanges(true);
+    updateDataInfoLabel();  // 更新行列数（以防数据结构变化）
 }
 
 void MainWindow::onSelectionChanged()
 {
-    m_selectionInfoLabel->setText("选中: " + m_dataTableView->selectedRangeInfo());
+    // 使用新的快速统计面板
+    QString statsText = m_dataTableView->getSelectionStatsText();
+    m_selectionInfoLabel->setText(statsText);
 }
 
 void MainWindow::onFileLoaded(const QString &filePath)
@@ -891,6 +903,9 @@ bool MainWindow::switchToDocument(int index)
     // 更新文档列表显示
     updateDocumentList();
 
+    // 更新状态栏行列数
+    updateDataInfoLabel();
+
     m_statusLabel->setText(QString("已切换到: %1").arg(newDoc->fileName));
 
     return true;
@@ -937,6 +952,7 @@ void MainWindow::closeDocument(int index)
             updateWindowTitle();
             m_fileInfoLabel->setText("无文件");
             m_statusLabel->setText("无打开的文档");
+            updateDataInfoLabel();  // 更新行列数为0
         } else {
             // 切换到前一个文档
             int newIndex = (index > 0) ? index - 1 : 0;
@@ -1020,5 +1036,32 @@ void MainWindow::onCloseCurrentDocument()
 {
     if (m_currentDocumentIndex >= 0) {
         closeDocument(m_currentDocumentIndex);
+    }
+}
+
+// ==================== 状态栏更新 ====================
+
+void MainWindow::updateDataInfoLabel()
+{
+    if (m_dataTableView && m_dataTableView->tableData()) {
+        auto *data = m_dataTableView->tableData();
+        int rows = data->rowCount();
+        int cols = data->columnCount();
+
+        // 格式化显示行列数
+        QString text = QString("%1 行 × %2 列").arg(rows).arg(cols);
+        m_dataInfoLabel->setText(text);
+
+        // 根据数据量设置不同颜色提示
+        if (rows > 100000) {
+            m_dataInfoLabel->setStyleSheet("QLabel { color: red; }");
+        } else if (rows > 10000) {
+            m_dataInfoLabel->setStyleSheet("QLabel { color: orange; }");
+        } else {
+            m_dataInfoLabel->setStyleSheet("");
+        }
+    } else {
+        m_dataInfoLabel->setText("0 行 × 0 列");
+        m_dataInfoLabel->setStyleSheet("");
     }
 }

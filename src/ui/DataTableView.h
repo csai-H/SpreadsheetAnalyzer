@@ -28,6 +28,22 @@ public:
     Core::TableData *tableData() const;
     QString selectedRangeInfo() const;
 
+    // 快速统计
+    struct SelectionStats {
+        int count = 0;           // 单元格数量
+        double sum = 0.0;        // 求和
+        double mean = 0.0;       // 平均值
+        double min = 0.0;        // 最小值
+        double max = 0.0;        // 最大值
+        bool hasNumericData = false;  // 是否包含数值数据
+    };
+    SelectionStats calculateSelectionStats() const;
+    QString getSelectionStatsText() const;  // 格式化显示统计信息
+
+    // 列宽调整
+    void resizeColumnsToContents();
+    void autoResizeColumns();  // 智能自适应列宽
+
 signals:
     void dataChanged();
     void selectionChanged();

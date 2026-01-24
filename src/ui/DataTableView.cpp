@@ -2,6 +2,7 @@
 #include "../core/CsvLoader.h"
 #include "../core/ExcelLoader.h"
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QContextMenuEvent>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -31,6 +32,12 @@ DataTableView::DataTableView(QWidget *parent)
     // 连接表头点击信号
     connect(horizontalHeader(), &QHeaderView::sectionClicked,
             this, &DataTableView::onHeaderClicked);
+
+    // 连接选择变化信号（用于快速统计面板）
+    connect(selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, [this]() {
+                emit selectionChanged();
+            });
 
     // 设置排序指示器
     horizontalHeader()->setSortIndicatorShown(true);
@@ -67,6 +74,22 @@ void DataTableView::setupContextMenu()
         QModelIndex current = currentIndex();
         m_model->removeRow(current.row());
         emit dataChanged();
+    });
+
+    m_contextMenu->addSeparator();
+
+    // 列宽调整菜单
+    QMenu* columnMenu = m_contextMenu->addMenu("列宽调整");
+    columnMenu->addAction("自动调整列宽", this, [this]() {
+        autoResizeColumns();
+    });
+    columnMenu->addAction("根据内容调整", this, [this]() {
+        resizeColumnsToContents();
+    });
+    columnMenu->addAction("重置为默认宽度", this, [this]() {
+        for (int col = 0; col < m_model->columnCount(); ++col) {
+            setColumnWidth(col, 100);
+        }
     });
 
     setContextMenuPolicy(Qt::CustomContextMenu);
@@ -112,6 +135,9 @@ bool DataTableView::loadFile(const QString &filePath)
             }
         }
 
+        // 自动调整列宽
+        autoResizeColumns();
+
         emit fileLoaded(filePath);
         return true;
 
@@ -147,6 +173,9 @@ bool DataTableView::loadFile(const QString &filePath)
                 m_model->setItem(row, col, item);
             }
         }
+
+        // 自动调整列宽
+        autoResizeColumns();
 
         emit fileLoaded(filePath);
         return true;
@@ -230,6 +259,95 @@ QString DataTableView::selectedRangeInfo() const
     return QString("%1 行 x %2 列").arg(rows).arg(cols);
 }
 
+// ==================== 快速统计 ====================
+
+DataTableView::SelectionStats DataTableView::calculateSelectionStats() const
+{
+    SelectionStats stats;
+
+    QModelIndexList indexes = selectedIndexes();
+    if (indexes.isEmpty()) {
+        return stats;
+    }
+
+    QVector<double> numericValues;
+
+    // 遍历选中的单元格，收集数值数据
+    for (const QModelIndex &index : indexes) {
+        if (!index.isValid()) continue;
+
+        QStandardItem* item = m_model->item(index.row(), index.column());
+        if (!item) continue;
+
+        QString text = item->text().trimmed();
+        if (text.isEmpty()) continue;
+
+        // 尝试转换为数值
+        bool ok = false;
+        double value = text.toDouble(&ok);
+        if (ok) {
+            numericValues.append(value);
+        }
+    }
+
+    if (numericValues.isEmpty()) {
+        stats.count = indexes.size();
+        return stats;
+    }
+
+    // 计算统计量
+    stats.count = indexes.size();
+    stats.hasNumericData = true;
+    stats.sum = 0.0;
+    stats.min = numericValues.first();
+    stats.max = numericValues.first();
+
+    for (double value : numericValues) {
+        stats.sum += value;
+        stats.min = qMin(stats.min, value);
+        stats.max = qMax(stats.max, value);
+    }
+
+    stats.mean = stats.sum / numericValues.size();
+
+    return stats;
+}
+
+QString DataTableView::getSelectionStatsText() const
+{
+    SelectionStats stats = calculateSelectionStats();
+
+    if (stats.count == 0) {
+        return "";
+    }
+
+    // 智能格式化数字（添加千分位分隔符）
+    auto formatNumber = [](double value, int decimals = 2) -> QString {
+        if (qAbs(value) >= 1000000) {
+            return QString::number(value / 1000000.0, 'f', 1) + "M";
+        } else if (qAbs(value) >= 1000) {
+            return QString::number(value / 1000.0, 'f', 1) + "K";
+        } else if (qFuzzyCompare(value, qFloor(value))) {
+            return QString::number(qint64(value));
+        } else {
+            return QString::number(value, 'f', decimals);
+        }
+    };
+
+    QString result = QString("选中: %1 格").arg(stats.count);
+
+    if (stats.hasNumericData) {
+        result += QString(" | Σ: %1 | 均值: %2 | 最小: %3 | 最大: %4")
+            .arg(formatNumber(stats.sum))
+            .arg(formatNumber(stats.mean))
+            .arg(formatNumber(stats.min))
+            .arg(formatNumber(stats.max));
+    }
+
+    return result;
+}
+
+
 void DataTableView::onContextMenuRequested(const QPoint &pos)
 {
     m_contextMenu->exec(viewport()->mapToGlobal(pos));
@@ -293,4 +411,50 @@ void DataTableView::sortColumn(int column, Qt::SortOrder order)
     m_model->sort(column, order);
 
     emit dataChanged();
+}
+
+// ==================== 列宽调整 ====================
+
+void DataTableView::resizeColumnsToContents()
+{
+    // 使用 Qt 内置的列宽自适应功能
+    QTableView::resizeColumnsToContents();
+}
+
+void DataTableView::autoResizeColumns()
+{
+    if (!m_model || m_model->columnCount() == 0) {
+        return;
+    }
+
+    // 智能自适应列宽算法
+    for (int col = 0; col < m_model->columnCount(); ++col) {
+        // 获取表头宽度
+        QString headerText = m_model->headerData(col, Qt::Horizontal).toString();
+        int headerWidth = fontMetrics().horizontalAdvance(headerText) + 20;  // 加padding
+
+        // 采样计算内容宽度（最多检查前100行，避免大文件卡顿）
+        int maxContentWidth = headerWidth;
+        int sampleRows = qMin(100, m_model->rowCount());
+
+        for (int row = 0; row < sampleRows; ++row) {
+            QStandardItem* item = m_model->item(row, col);
+            if (item) {
+                QString text = item->text();
+                int textWidth = fontMetrics().horizontalAdvance(text);
+                maxContentWidth = qMax(maxContentWidth, textWidth);
+            }
+        }
+
+        // 设置列宽，限制在合理范围内
+        int columnWidth = qBound(80, maxContentWidth + 20, 500);  // 最小80，最大500
+        setColumnWidth(col, columnWidth);
+    }
+
+    // 如果总宽度小于视口宽度，拉伸最后一列填充
+    if (horizontalHeader()->length() < viewport()->width()) {
+        horizontalHeader()->setStretchLastSection(true);
+    } else {
+        horizontalHeader()->setStretchLastSection(false);
+    }
 }
