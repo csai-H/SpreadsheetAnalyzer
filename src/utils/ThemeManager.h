@@ -9,7 +9,6 @@
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QWidget>
-#include <memory>
 
 /**
  * @brief 主题类型

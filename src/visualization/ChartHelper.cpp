@@ -15,8 +15,6 @@
 #include <QtCharts/QBarCategoryAxis>
 #include <QDebug>
 #include <QFont>
-#include <algorithm>
-#include <map>
 
 namespace Charts {
 

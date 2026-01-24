@@ -8,6 +8,8 @@
 #include <QMessageBox>
 #include <QStandardItemModel>
 #include <QDebug>
+#include <QApplication>
+#include <QClipboard>
 
 DataTableView::DataTableView(QWidget *parent)
     : QTableView(parent)
@@ -59,7 +61,7 @@ void DataTableView::setupContextMenu()
     m_contextMenu = new QMenu(this);
 
     m_contextMenu->addAction("复制", this, [this]() {
-        // TODO: 实现复制功能
+        copySelection();
     });
 
     m_contextMenu->addSeparator();
@@ -457,4 +459,61 @@ void DataTableView::autoResizeColumns()
     } else {
         horizontalHeader()->setStretchLastSection(false);
     }
+}
+
+// ==================== 复制粘贴 ====================
+
+void DataTableView::copySelection()
+{
+    // 获取选中的单元格
+    QModelIndexList indexes = selectedIndexes();
+
+    if (indexes.isEmpty()) {
+        return;
+    }
+
+    // 确定选中范围的边界
+    int minRow = indexes.first().row();
+    int maxRow = indexes.first().row();
+    int minCol = indexes.first().column();
+    int maxCol = indexes.first().column();
+
+    for (const QModelIndex &index : indexes) {
+        minRow = qMin(minRow, index.row());
+        maxRow = qMax(maxRow, index.row());
+        minCol = qMin(minCol, index.column());
+        maxCol = qMax(maxCol, index.column());
+    }
+
+    // 按行组织数据（制表符分隔列，换行符分隔行）
+    QString text;
+    for (int row = minRow; row <= maxRow; ++row) {
+        for (int col = minCol; col <= maxCol; ++col) {
+            QStandardItem* item = m_model->item(row, col);
+            QString cellText = item ? item->text() : "";
+
+            // 如果文本包含制表符、换行符或引号，需要用引号包裹并转义
+            if (cellText.contains('\t') || cellText.contains('\n') || cellText.contains('"')) {
+                cellText = "\"" + cellText.replace("\"", "\"\"") + "\"";
+            }
+
+            text += cellText;
+
+            // 列之间用制表符分隔
+            if (col < maxCol) {
+                text += '\t';
+            }
+        }
+        // 行之间用换行符分隔
+        if (row < maxRow) {
+            text += '\n';
+        }
+    }
+
+    // 复制到剪贴板
+    QClipboard *clipboard = QApplication::clipboard();
+    clipboard->setText(text);
+
+    // 给用户反馈（状态栏或短暂提示）
+    qDebug() << "已复制" << (maxRow - minRow + 1) << "行 x" << (maxCol - minCol + 1) << "列到剪贴板";
 }

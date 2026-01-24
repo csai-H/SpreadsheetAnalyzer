@@ -55,6 +55,7 @@ private slots:
 
 private:
     void setupContextMenu();
+    void copySelection();  // 复制选中内容到剪贴板
 
     // 排序辅助函数
     void sortColumn(int column, Qt::SortOrder order = Qt::AscendingOrder);

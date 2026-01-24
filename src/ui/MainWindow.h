@@ -13,7 +13,6 @@
 #include <QListWidget>
 #include <QList>
 #include <QSharedPointer>
-#include <memory>
 
 class DataTableView;
 class ChartView;
