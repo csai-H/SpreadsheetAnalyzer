@@ -10,6 +10,46 @@
 #include <QDebug>
 #include <QApplication>
 #include <QClipboard>
+#include <QLineEdit>
+
+// ==================== TableItemDelegate 实现 ====================
+
+QWidget *TableItemDelegate::createEditor(QWidget *parent,
+                                          const QStyleOptionViewItem &option,
+                                          const QModelIndex &index) const
+{
+    Q_UNUSED(option);
+    Q_UNUSED(index);
+
+    QLineEdit *editor = new QLineEdit(parent);
+    editor->setFrame(true);
+    editor->setAutoFillBackground(true);
+
+    // 设置最小高度，避免文字被压缩
+    editor->setMinimumHeight(30);
+
+    return editor;
+}
+
+void TableItemDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
+{
+    QString text = index.model()->data(index, Qt::EditRole).toString();
+    QLineEdit *lineEdit = static_cast<QLineEdit*>(editor);
+    lineEdit->setText(text);
+}
+
+void TableItemDelegate::updateEditorGeometry(QWidget *editor,
+                                              const QStyleOptionViewItem &option,
+                                              const QModelIndex &index) const
+{
+    Q_UNUSED(index);
+
+    // 设置编辑器的几何形状，确保有足够的高度
+    QRect rect = option.rect;
+    editor->setGeometry(rect);
+}
+
+// ==================== DataTableView 实现 ====================
 
 DataTableView::DataTableView(QWidget *parent)
     : QTableView(parent)
@@ -17,6 +57,9 @@ DataTableView::DataTableView(QWidget *parent)
     , m_tableData(new Core::TableData())
 {
     setModel(m_model);
+
+    // 设置自定义委托，修复编辑器高度问题
+    setItemDelegate(new TableItemDelegate(this));
 
     // 设置视图属性
     setAlternatingRowColors(true);
@@ -47,6 +90,9 @@ DataTableView::DataTableView(QWidget *parent)
     // 设置网格
     setShowGrid(true);
     setWordWrap(false);
+
+    // 设置编辑器高度，避免文字被压缩
+    verticalHeader()->setDefaultSectionSize(30);
 
     setupContextMenu();
 }

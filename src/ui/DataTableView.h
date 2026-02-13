@@ -4,7 +4,30 @@
 #include <QTableView>
 #include <QStandardItemModel>
 #include <QMenu>
+#include <QStyledItemDelegate>
 #include "../core/TableData.h"
+
+/**
+ * @brief 自定义编辑器委托
+ *
+ * 修复编辑器高度和样式问题
+ */
+class TableItemDelegate : public QStyledItemDelegate
+{
+    Q_OBJECT
+
+public:
+    explicit TableItemDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    QWidget *createEditor(QWidget *parent,
+                          const QStyleOptionViewItem &option,
+                          const QModelIndex &index) const override;
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override;
+    void updateEditorGeometry(QWidget *editor,
+                              const QStyleOptionViewItem &option,
+                              const QModelIndex &index) const override;
+};
 
 /**
  * @brief 数据表格视图
@@ -43,6 +66,7 @@ public:
     // 列宽调整
     void resizeColumnsToContents();
     void autoResizeColumns();  // 智能自适应列宽
+    void copySelection();      // 复制选中内容到剪贴板
 
 signals:
     void dataChanged();
@@ -55,7 +79,6 @@ private slots:
 
 private:
     void setupContextMenu();
-    void copySelection();  // 复制选中内容到剪贴板
 
     // 排序辅助函数
     void sortColumn(int column, Qt::SortOrder order = Qt::AscendingOrder);

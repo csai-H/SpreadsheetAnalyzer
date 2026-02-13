@@ -70,3 +70,6 @@ _deps/
 
 # Claude Code local settings
 .claude/
+
+# Windows accidental null device file
+nul

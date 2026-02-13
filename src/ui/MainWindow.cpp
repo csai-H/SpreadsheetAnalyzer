@@ -463,7 +463,13 @@ void MainWindow::onRedo()
 
 void MainWindow::onCopy()
 {
-    // TODO: 实现复制功能
+    if (!m_dataTableView || !m_dataTableView->tableData()) {
+        QMessageBox::information(this, "提示", "请先打开数据文件");
+        return;
+    }
+
+    m_dataTableView->copySelection();
+    m_statusLabel->setText("已复制到剪贴板");
 }
 
 void MainWindow::onPaste()
