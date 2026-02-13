@@ -67,3 +67,6 @@ _deps/
 # Test data (optional - uncomment if you don't want to track test files)
 # test_data.csv
 # test_sales_data.csv
+
+# Claude Code local settings
+.claude/
