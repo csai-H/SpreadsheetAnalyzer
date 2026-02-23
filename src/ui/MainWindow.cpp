@@ -479,7 +479,9 @@ void MainWindow::onPaste()
 
 void MainWindow::onSelectAll()
 {
-    // TODO: 实现全选功能
+    if (m_dataTableView) {
+        m_dataTableView->selectAll();
+    }
 }
 
 void MainWindow::onToggleSidebar()
