@@ -18,6 +18,7 @@
 #include <QMimeData>
 #include <QUrl>
 #include <QSettings>
+#include <QHeaderView>
 #include <QFileInfo>
 #include <QAction>
 #include <QMenu>
@@ -51,6 +52,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 加载最近文件列表
     loadRecentFiles();
+
+    // 初始化基础字体大小
+    if (m_dataTableView) {
+        m_baseFontSize = m_dataTableView->font().pointSizeF();
+    }
 }
 
 MainWindow::~MainWindow() = default;
@@ -491,17 +497,52 @@ void MainWindow::onToggleSidebar()
 
 void MainWindow::onZoomIn()
 {
-    // TODO: 实现放大功能
+    // 计算新的缩放级别
+    m_zoomLevel = qMin(m_zoomLevel + ZOOM_STEP, MAX_ZOOM);
+    applyZoom();
+
+    // 更新状态栏
+    m_statusLabel->setText(QString("缩放: %1%").arg(qRound(m_zoomLevel * 100)));
 }
 
 void MainWindow::onZoomOut()
 {
-    // TODO: 实现缩小功能
+    // 计算新的缩放级别
+    m_zoomLevel = qMax(m_zoomLevel - ZOOM_STEP, MIN_ZOOM);
+    applyZoom();
+
+    // 更新状态栏
+    m_statusLabel->setText(QString("缩放: %1%").arg(qRound(m_zoomLevel * 100)));
 }
 
 void MainWindow::onResetZoom()
 {
-    // TODO: 实现重置缩放功能
+    // 重置缩放级别
+    m_zoomLevel = 1.0;
+    applyZoom();
+
+    // 更新状态栏
+    m_statusLabel->setText("缩放: 100%");
+}
+
+void MainWindow::applyZoom()
+{
+    // 计算新的字体大小
+    double fontSize = m_baseFontSize * m_zoomLevel;
+
+    // 应用到数据表格
+    if (m_dataTableView) {
+        QFont font = m_dataTableView->font();
+        font.setPointSizeF(fontSize);
+        m_dataTableView->setFont(font);
+
+        // 同时更新表头字体
+        m_dataTableView->horizontalHeader()->setFont(font);
+        m_dataTableView->verticalHeader()->setFont(font);
+    }
+
+    // 图表缩放功能暂时注释，需要通过 ChartView 的公共接口实现
+    // TODO: 在 ChartView 中添加 setZoomLevel() 方法来支持图表缩放
 }
 
 void MainWindow::onStatistics()

@@ -186,8 +186,18 @@ private:
     QList<QSharedPointer<DocumentInfo>> m_documents;
     int m_currentDocumentIndex;
 
+    // 缩放状态
+    double m_zoomLevel = 1.0;  // 当前缩放级别，1.0 = 100%
+    double m_baseFontSize = 10.0;  // 基础字体大小
+    static constexpr double MIN_ZOOM = 0.6;   // 最小缩放（60%）
+    static constexpr double MAX_ZOOM = 2.0;   // 最大缩放（200%）
+    static constexpr double ZOOM_STEP = 0.1;  // 缩放步长（10%）
+
     // 对话框
     StatisticsDialog *m_statisticsDialog;
+
+private:
+    void applyZoom();  // 应用缩放到所有视图
 };
 
 #endif // MAINWINDOW_H
