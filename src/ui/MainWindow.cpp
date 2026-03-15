@@ -118,9 +118,16 @@ void MainWindow::createMenuBar()
     m_viewMenu = menuBar()->addMenu("视图(&V)");
     m_viewMenu->addAction("侧边栏(&B)", this, &MainWindow::onToggleSidebar);
     m_viewMenu->addSeparator();
-    m_viewMenu->addAction("放大(&I)", QKeySequence::ZoomIn, this, &MainWindow::onZoomIn);
-    m_viewMenu->addAction("缩小(&O)", QKeySequence::ZoomOut, this, &MainWindow::onZoomOut);
-    m_viewMenu->addAction("重置(&R)", this, &MainWindow::onResetZoom);
+
+    // 缩放动作 - 支持多种快捷键
+    auto* zoomInAction = m_viewMenu->addAction("放大(&I)", this, &MainWindow::onZoomIn);
+    zoomInAction->setShortcuts({QKeySequence::ZoomIn, QKeySequence(Qt::CTRL | Qt::Key_Equal)});
+
+    auto* zoomOutAction = m_viewMenu->addAction("缩小(&O)", this, &MainWindow::onZoomOut);
+    zoomOutAction->setShortcut(QKeySequence::ZoomOut);
+
+    auto* resetZoomAction = m_viewMenu->addAction("重置(&R)", this, &MainWindow::onResetZoom);
+    resetZoomAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
 
     // 工具菜单
     auto *toolsMenu = menuBar()->addMenu("工具(&T)");
