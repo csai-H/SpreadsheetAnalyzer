@@ -111,6 +111,7 @@ private slots:
     // 界面更新
     void updateWindowTitle();
     void onDataChanged();
+    void onViewChanged();
     void onSelectionChanged();
     void onFileLoaded(const QString &filePath);
     void onChartColumnChanged(int row);
@@ -139,6 +140,8 @@ private:
     void closeDocument(int index);
     void closeAllDocuments();
     DocumentInfo* currentDocument();
+    void syncCurrentDocumentState();
+    void refreshCurrentChart();
 
     // 状态栏更新
     void updateDataInfoLabel();  // 更新行列数显示
@@ -185,6 +188,7 @@ private:
     // 文档列表
     QList<QSharedPointer<DocumentInfo>> m_documents;
     int m_currentDocumentIndex;
+    QSharedPointer<Core::TableData> m_chartDataSnapshot;
 
     // 缩放状态
     double m_zoomLevel = 1.0;  // 当前缩放级别，1.0 = 100%

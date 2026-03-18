@@ -1,39 +1,36 @@
 #ifndef DATATABLEVIEW_H
 #define DATATABLEVIEW_H
 
-#include <QTableView>
-#include <QStandardItemModel>
 #include <QMenu>
+#include <QSharedPointer>
 #include <QStyledItemDelegate>
+#include <QTableView>
+
 #include "../core/TableData.h"
 
-/**
- * @brief 自定义编辑器委托
- *
- * 修复编辑器高度和样式问题
- */
+class QAbstractItemModel;
+class QStandardItemModel;
+class TableFilterProxyModel;
+
 class TableItemDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 
 public:
-    explicit TableItemDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+    explicit TableItemDelegate(QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+    }
 
     QWidget *createEditor(QWidget *parent,
                           const QStyleOptionViewItem &option,
                           const QModelIndex &index) const override;
-
     void setEditorData(QWidget *editor, const QModelIndex &index) const override;
     void updateEditorGeometry(QWidget *editor,
                               const QStyleOptionViewItem &option,
                               const QModelIndex &index) const override;
 };
 
-/**
- * @brief 数据表格视图
- *
- * 显示和编辑表格数据
- */
 class DataTableView : public QTableView
 {
     Q_OBJECT
@@ -42,35 +39,45 @@ public:
     explicit DataTableView(QWidget *parent = nullptr);
     ~DataTableView() override;
 
-    // 数据操作
     bool loadFile(const QString &filePath);
     bool saveFile(const QString &filePath);
     void clearData();
+    void setTableData(const QSharedPointer<Core::TableData> &data);
 
-    // 数据获取
+    bool hasData() const;
+    int totalRowCount() const;
+    int visibleRowCount() const;
+    int dataColumnCount() const;
+
     Core::TableData *tableData() const;
+    QSharedPointer<Core::TableData> snapshotData(bool visibleOnly = false) const;
+
+    void applyFilter(int column, int condition, const QString &value);
+    void clearFilter();
+    bool hasActiveFilter() const;
+
     QString selectedRangeInfo() const;
 
-    // 快速统计
     struct SelectionStats {
-        int count = 0;           // 单元格数量
-        double sum = 0.0;        // 求和
-        double mean = 0.0;       // 平均值
-        double min = 0.0;        // 最小值
-        double max = 0.0;        // 最大值
-        bool hasNumericData = false;  // 是否包含数值数据
+        int count = 0;
+        double sum = 0.0;
+        double mean = 0.0;
+        double min = 0.0;
+        double max = 0.0;
+        bool hasNumericData = false;
     };
-    SelectionStats calculateSelectionStats() const;
-    QString getSelectionStatsText() const;  // 格式化显示统计信息
 
-    // 列宽调整
+    SelectionStats calculateSelectionStats() const;
+    QString getSelectionStatsText() const;
+
     void resizeColumnsToContents();
-    void autoResizeColumns();  // 智能自适应列宽
-    void copySelection();      // 复制选中内容到剪贴板
+    void autoResizeColumns();
+    void copySelection();
 
 signals:
     void dataChanged();
     void selectionChanged();
+    void viewChanged();
     void fileLoaded(const QString &filePath);
 
 private slots:
@@ -79,16 +86,22 @@ private slots:
 
 private:
     void setupContextMenu();
-
-    // 排序辅助函数
+    void populateModelFromTableData(const Core::TableData *data);
+    QSharedPointer<Core::TableData> buildSnapshot(QAbstractItemModel *model) const;
+    void invalidateSnapshots() const;
+    void connectSourceModelSignals();
     void sortColumn(int column, Qt::SortOrder order = Qt::AscendingOrder);
     bool isNumericColumn(int column) const;
 
-    QStandardItemModel *m_model;
-    Core::TableData *m_tableData;
+    QStandardItemModel *m_sourceModel;
+    TableFilterProxyModel *m_proxyModel;
     QMenu *m_contextMenu;
 
-    // 排序状态跟踪
+    mutable QSharedPointer<Core::TableData> m_fullSnapshotCache;
+    mutable QSharedPointer<Core::TableData> m_visibleSnapshotCache;
+    mutable bool m_snapshotCacheDirty = true;
+    bool m_bulkUpdating = false;
+
     int m_sortColumn = -1;
     Qt::SortOrder m_sortOrder = Qt::AscendingOrder;
 };

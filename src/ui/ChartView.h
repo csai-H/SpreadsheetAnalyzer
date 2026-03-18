@@ -1,16 +1,18 @@
 #ifndef CHARTVIEW_H
 #define CHARTVIEW_H
 
-#include <QWidget>
-#include <QtCharts/QChartView>
-#include <QtCharts/QChart>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QComboBox>
-#include <QPushButton>
-#include <QLineEdit>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QSharedPointer>
 #include <QSpinBox>
+#include <QVBoxLayout>
+#include <QWidget>
+
+#include <QtCharts/QChart>
+#include <QtCharts/QChartView>
 
 #include "core/TableData.h"
 #include "visualization/ChartTypes.h"
@@ -32,7 +34,7 @@ public:
     void setChartType(const QString &typeName);
     void refreshChart();
     void setChartData(const Charts::ChartData &data);
-    void setTableData(Core::TableData *data, int column);
+    void setTableData(const QSharedPointer<Core::TableData> &data, int column);
 
 private slots:
     void onChartTypeChanged(int index);
@@ -47,7 +49,7 @@ private:
     QChartView *m_chartView;
     QChart *m_currentChart;
     Charts::ChartData m_chartData;
-    Core::TableData *m_tableData;
+    QSharedPointer<Core::TableData> m_tableData;
 
     // 工具栏
     QComboBox *m_chartTypeCombo;

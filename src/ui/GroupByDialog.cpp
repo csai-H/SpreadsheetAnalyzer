@@ -6,7 +6,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QDebug>
-#include <QStandardItemModel>
+#include <QAbstractItemModel>
 #include <QTableWidgetItem>
 #include <algorithm>
 #include <numeric>
@@ -91,7 +91,7 @@ void GroupByDialog::populateColumns()
 {
     if (!m_tableView) return;
 
-    auto* model = qobject_cast<QStandardItemModel*>(m_tableView->model());
+    auto* model = m_tableView ? m_tableView->model() : nullptr;
     if (!model) return;
 
     m_groupByCombo->clear();
@@ -110,7 +110,7 @@ void GroupByDialog::onGroupByClicked()
 
     if (!m_tableView) return;
 
-    auto* model = qobject_cast<QStandardItemModel*>(m_tableView->model());
+    auto* model = m_tableView ? m_tableView->model() : nullptr;
     if (!model) return;
 
     int groupColumn = m_groupByCombo->currentData().toInt();

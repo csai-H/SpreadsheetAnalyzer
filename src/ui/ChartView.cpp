@@ -24,7 +24,6 @@ ChartView::ChartView(QWidget *parent)
     : QWidget(parent)
     , m_chartView(new QChartView(this))
     , m_currentChart(nullptr)
-    , m_tableData(nullptr)
 {
     auto *mainLayout = new QVBoxLayout(this);
 
@@ -319,11 +318,13 @@ void ChartView::setChartData(const Charts::ChartData &data)
     updateChart();
 }
 
-void ChartView::setTableData(Core::TableData *data, int column)
+void ChartView::setTableData(const QSharedPointer<Core::TableData> &data, int column)
 {
     m_tableData = data;
 
-    if (!m_tableData || column < 0 || column >= m_tableData->columnCount()) {
+    if (!m_tableData || m_tableData->isEmpty() || column < 0 || column >= m_tableData->columnCount()) {
+        m_chartData = Charts::ChartData();
+        updateChart();
         return;
     }
 
