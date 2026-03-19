@@ -28,6 +28,9 @@ public:
     void setFilterRule(int column, Condition condition, const QString &value);
     void clearFilterRule();
     bool hasActiveFilter() const;
+    int filterColumn() const;
+    Condition filterCondition() const;
+    QString filterValue() const;
 
 protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;

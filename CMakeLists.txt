@@ -57,6 +57,7 @@ set(SOURCES
     src/main.cpp
     src/ui/MainWindow.cpp
     src/ui/DataTableView.cpp
+    src/ui/TableDataModel.cpp
     src/ui/TableFilterProxyModel.cpp
     src/ui/ChartView.cpp
     src/ui/StatisticsDialog.cpp
@@ -82,6 +83,7 @@ set(SOURCES
 set(HEADERS
     src/ui/MainWindow.h
     src/ui/DataTableView.h
+    src/ui/TableDataModel.h
     src/ui/TableFilterProxyModel.h
     src/ui/ChartView.h
     src/ui/StatisticsDialog.h

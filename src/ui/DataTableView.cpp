@@ -1,5 +1,6 @@
 #include "DataTableView.h"
 
+#include "TableDataModel.h"
 #include "TableFilterProxyModel.h"
 #include "../core/CsvLoader.h"
 #include "../core/ExcelExporter.h"
@@ -11,11 +12,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QSignalBlocker>
-#include <QStandardItem>
-#include <QStandardItemModel>
 #include <QTextStream>
 
 QWidget *TableItemDelegate::createEditor(QWidget *parent,
@@ -48,7 +47,8 @@ void TableItemDelegate::updateEditorGeometry(QWidget *editor,
 
 DataTableView::DataTableView(QWidget *parent)
     : QTableView(parent)
-    , m_sourceModel(new QStandardItemModel(this))
+    , m_tableModel(QSharedPointer<TableDataModel>::create())
+    , m_sourceModel(m_tableModel.data())
     , m_proxyModel(new TableFilterProxyModel(this))
 {
     m_proxyModel->setSourceModel(m_sourceModel);
@@ -102,7 +102,6 @@ bool DataTableView::loadFile(const QString &filePath)
     }
 
     setTableData(QSharedPointer<Core::TableData>(result.data));
-    autoResizeColumns();
     emit fileLoaded(filePath);
     return true;
 }
@@ -158,24 +157,35 @@ bool DataTableView::saveFile(const QString &filePath)
 
 void DataTableView::clearData()
 {
-    m_bulkUpdating = true;
-    m_sourceModel->clear();
-    m_bulkUpdating = false;
-
+    setTableModel(QSharedPointer<TableDataModel>::create());
     clearFilter();
     m_sortColumn = -1;
     m_sortOrder = Qt::AscendingOrder;
+    horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
     invalidateSnapshots();
 }
 
 void DataTableView::setTableData(const QSharedPointer<Core::TableData> &data)
 {
-    populateModelFromTableData(data.data());
+    setTableModel(QSharedPointer<TableDataModel>::create(data));
     clearFilter();
     m_sortColumn = -1;
     m_sortOrder = Qt::AscendingOrder;
     horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
     autoResizeColumns();
+}
+
+void DataTableView::setTableModel(const QSharedPointer<TableDataModel> &model)
+{
+    if (m_sourceModel) {
+        disconnect(m_sourceModel, nullptr, this, nullptr);
+    }
+
+    m_tableModel = model ? model : QSharedPointer<TableDataModel>::create();
+    m_sourceModel = m_tableModel.data();
+    m_proxyModel->setSourceModel(m_sourceModel);
+    connectSourceModelSignals();
+    invalidateSnapshots();
 }
 
 bool DataTableView::hasData() const
@@ -185,7 +195,7 @@ bool DataTableView::hasData() const
 
 int DataTableView::totalRowCount() const
 {
-    return m_sourceModel->rowCount();
+    return m_sourceModel ? m_sourceModel->rowCount() : 0;
 }
 
 int DataTableView::visibleRowCount() const
@@ -195,18 +205,22 @@ int DataTableView::visibleRowCount() const
 
 int DataTableView::dataColumnCount() const
 {
-    return m_sourceModel->columnCount();
+    return m_sourceModel ? m_sourceModel->columnCount() : 0;
+}
+
+QSharedPointer<TableDataModel> DataTableView::tableModel() const
+{
+    return m_tableModel;
 }
 
 Core::TableData *DataTableView::tableData() const
 {
-    return snapshotData(false).data();
+    return m_sourceModel ? m_sourceModel->tableData().data() : nullptr;
 }
 
 QSharedPointer<Core::TableData> DataTableView::snapshotData(bool visibleOnly) const
 {
     if (m_snapshotCacheDirty) {
-        m_fullSnapshotCache.clear();
         m_visibleSnapshotCache.clear();
         m_snapshotCacheDirty = false;
     }
@@ -218,10 +232,21 @@ QSharedPointer<Core::TableData> DataTableView::snapshotData(bool visibleOnly) co
         return m_visibleSnapshotCache;
     }
 
-    if (m_fullSnapshotCache.isNull()) {
-        m_fullSnapshotCache = buildSnapshot(m_sourceModel);
+    return m_sourceModel ? m_sourceModel->tableData() : QSharedPointer<Core::TableData>::create();
+}
+
+QStringList DataTableView::columnHeaders() const
+{
+    QStringList headers;
+    if (!m_sourceModel) {
+        return headers;
     }
-    return m_fullSnapshotCache;
+
+    headers.reserve(m_sourceModel->columnCount());
+    for (int col = 0; col < m_sourceModel->columnCount(); ++col) {
+        headers << m_sourceModel->headerData(col, Qt::Horizontal).toString();
+    }
+    return headers;
 }
 
 void DataTableView::applyFilter(int column, int condition, const QString &value)
@@ -247,6 +272,38 @@ void DataTableView::clearFilter()
 bool DataTableView::hasActiveFilter() const
 {
     return m_proxyModel->hasActiveFilter();
+}
+
+int DataTableView::activeFilterColumn() const
+{
+    return m_proxyModel->filterColumn();
+}
+
+int DataTableView::activeFilterCondition() const
+{
+    return static_cast<int>(m_proxyModel->filterCondition());
+}
+
+QString DataTableView::activeFilterValue() const
+{
+    return m_proxyModel->filterValue();
+}
+
+int DataTableView::sortColumnIndex() const
+{
+    return m_sortColumn;
+}
+
+Qt::SortOrder DataTableView::currentSortOrder() const
+{
+    return m_sortOrder;
+}
+
+void DataTableView::setSortState(int column, Qt::SortOrder order)
+{
+    m_sortColumn = column;
+    m_sortOrder = order;
+    horizontalHeader()->setSortIndicator(column, order);
 }
 
 QString DataTableView::selectedRangeInfo() const
@@ -418,6 +475,168 @@ void DataTableView::copySelection()
     QApplication::clipboard()->setText(text);
 }
 
+bool DataTableView::pasteFromClipboard(QString *errorMessage)
+{
+    if (!m_sourceModel) {
+        if (errorMessage) {
+            *errorMessage = tr("当前表格没有可编辑的数据模型");
+        }
+        return false;
+    }
+
+    const QString clipboardText = QApplication::clipboard()->text();
+    if (clipboardText.trimmed().isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = tr("剪贴板中没有可粘贴的数据");
+        }
+        return false;
+    }
+
+    QString normalizedText = clipboardText;
+    normalizedText.replace("\r\n", "\n");
+    normalizedText.replace('\r', '\n');
+    if (normalizedText.endsWith('\n')) {
+        normalizedText.chop(1);
+    }
+
+    const QStringList rowTexts = normalizedText.split('\n');
+    QVector<QStringList> rows;
+    rows.reserve(rowTexts.size());
+
+    int maxColumns = 0;
+    for (const QString &rowText : rowTexts) {
+        const QStringList columns = rowText.split('\t');
+        if (columns.isEmpty()) {
+            continue;
+        }
+        maxColumns = qMax(maxColumns, columns.size());
+        rows.append(columns);
+    }
+
+    if (rows.isEmpty() || maxColumns <= 0) {
+        if (errorMessage) {
+            *errorMessage = tr("剪贴板内容格式不支持");
+        }
+        return false;
+    }
+
+    int startRow = 0;
+    int startColumn = 0;
+
+    const QModelIndex proxyIndex = currentIndex();
+    if (proxyIndex.isValid()) {
+        const QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
+        if (!sourceIndex.isValid()) {
+            if (errorMessage) {
+                *errorMessage = tr("无法确定粘贴位置");
+            }
+            return false;
+        }
+
+        startRow = sourceIndex.row();
+        startColumn = sourceIndex.column();
+    }
+
+    const int requiredRows = startRow + rows.size();
+    const int requiredColumns = startColumn + maxColumns;
+
+    if (requiredRows > m_sourceModel->rowCount()) {
+        m_sourceModel->insertRows(m_sourceModel->rowCount(), requiredRows - m_sourceModel->rowCount());
+    }
+    if (requiredColumns > m_sourceModel->columnCount()) {
+        m_sourceModel->insertColumns(m_sourceModel->columnCount(), requiredColumns - m_sourceModel->columnCount());
+    }
+
+    for (int rowOffset = 0; rowOffset < rows.size(); ++rowOffset) {
+        const QStringList &columns = rows[rowOffset];
+        for (int columnOffset = 0; columnOffset < columns.size(); ++columnOffset) {
+            const QModelIndex target = m_sourceModel->index(startRow + rowOffset, startColumn + columnOffset);
+            m_sourceModel->setData(target, columns[columnOffset], Qt::EditRole);
+        }
+    }
+
+    const QModelIndex topLeft = m_proxyModel->mapFromSource(m_sourceModel->index(startRow, startColumn));
+    const QModelIndex bottomRight = m_proxyModel->mapFromSource(
+        m_sourceModel->index(startRow + rows.size() - 1, startColumn + maxColumns - 1));
+    if (topLeft.isValid() && bottomRight.isValid()) {
+        selectionModel()->select(QItemSelection(topLeft, bottomRight),
+                                 QItemSelectionModel::ClearAndSelect);
+        setCurrentIndex(topLeft);
+    }
+
+    return true;
+}
+
+bool DataTableView::findText(const QString &text, Qt::CaseSensitivity caseSensitivity)
+{
+    if (text.isEmpty() || !model() || model()->rowCount() == 0 || model()->columnCount() == 0) {
+        return false;
+    }
+
+    const int rowCount = model()->rowCount();
+    const int columnCount = model()->columnCount();
+    const int totalCells = rowCount * columnCount;
+
+    int startOffset = 0;
+    if (currentIndex().isValid()) {
+        startOffset = currentIndex().row() * columnCount + currentIndex().column() + 1;
+        if (startOffset >= totalCells) {
+            startOffset = 0;
+        }
+    }
+
+    auto selectMatch = [this](const QModelIndex &index) {
+        selectionModel()->select(index, QItemSelectionModel::ClearAndSelect);
+        setCurrentIndex(index);
+        scrollTo(index, QAbstractItemView::PositionAtCenter);
+    };
+
+    for (int offset = 0; offset < totalCells; ++offset) {
+        const int linearIndex = (startOffset + offset) % totalCells;
+        const int row = linearIndex / columnCount;
+        const int column = linearIndex % columnCount;
+        const QModelIndex index = model()->index(row, column);
+        const QString cellText = model()->data(index, Qt::DisplayRole).toString();
+        if (cellText.contains(text, caseSensitivity)) {
+            selectMatch(index);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool DataTableView::goToCell(int row, int column, QString *errorMessage)
+{
+    if (!m_sourceModel) {
+        if (errorMessage) {
+            *errorMessage = tr("当前表格没有数据");
+        }
+        return false;
+    }
+
+    if (row < 0 || row >= m_sourceModel->rowCount() || column < 0 || column >= m_sourceModel->columnCount()) {
+        if (errorMessage) {
+            *errorMessage = tr("目标单元格超出当前数据范围");
+        }
+        return false;
+    }
+
+    const QModelIndex sourceIndex = m_sourceModel->index(row, column);
+    const QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
+    if (!proxyIndex.isValid()) {
+        if (errorMessage) {
+            *errorMessage = tr("目标单元格被当前筛选隐藏");
+        }
+        return false;
+    }
+
+    selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect);
+    setCurrentIndex(proxyIndex);
+    scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
+    return true;
+}
+
 void DataTableView::onContextMenuRequested(const QPoint &pos)
 {
     m_contextMenu->exec(viewport()->mapToGlobal(pos));
@@ -443,9 +662,16 @@ void DataTableView::setupContextMenu()
     m_contextMenu = new QMenu(this);
 
     m_contextMenu->addAction(tr("复制"), this, &DataTableView::copySelection);
+    m_contextMenu->addAction(tr("粘贴"), this, [this]() {
+        pasteFromClipboard();
+    });
     m_contextMenu->addSeparator();
 
     m_contextMenu->addAction(tr("插入行"), this, [this]() {
+        if (!m_sourceModel) {
+            return;
+        }
+
         int insertRow = m_sourceModel->rowCount();
         if (currentIndex().isValid()) {
             const QModelIndex sourceIndex = m_proxyModel->mapToSource(currentIndex());
@@ -454,22 +680,17 @@ void DataTableView::setupContextMenu()
             }
         }
 
-        m_sourceModel->insertRow(insertRow);
-        for (int col = 0; col < m_sourceModel->columnCount(); ++col) {
-            auto *item = new QStandardItem();
-            item->setEditable(true);
-            m_sourceModel->setItem(insertRow, col, item);
-        }
+        m_sourceModel->insertRows(insertRow, 1);
     });
 
     m_contextMenu->addAction(tr("删除行"), this, [this]() {
-        if (!currentIndex().isValid()) {
+        if (!m_sourceModel || !currentIndex().isValid()) {
             return;
         }
 
         const QModelIndex sourceIndex = m_proxyModel->mapToSource(currentIndex());
         if (sourceIndex.isValid()) {
-            m_sourceModel->removeRow(sourceIndex.row());
+            m_sourceModel->removeRows(sourceIndex.row(), 1);
         }
     });
 
@@ -487,39 +708,6 @@ void DataTableView::setupContextMenu()
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QTableView::customContextMenuRequested,
             this, &DataTableView::onContextMenuRequested);
-}
-
-void DataTableView::populateModelFromTableData(const Core::TableData *data)
-{
-    m_bulkUpdating = true;
-    m_sourceModel->clear();
-
-    if (!data || data->columnCount() == 0) {
-        m_bulkUpdating = false;
-        invalidateSnapshots();
-        return;
-    }
-
-    m_sourceModel->setRowCount(data->rowCount());
-    m_sourceModel->setColumnCount(data->columnCount());
-
-    QStringList headers;
-    headers.reserve(data->columnCount());
-    for (int col = 0; col < data->columnCount(); ++col) {
-        headers << data->header(col);
-    }
-    m_sourceModel->setHorizontalHeaderLabels(headers);
-
-    for (int row = 0; row < data->rowCount(); ++row) {
-        for (int col = 0; col < data->columnCount(); ++col) {
-            auto *item = new QStandardItem(data->at(row, col).toString());
-            item->setEditable(true);
-            m_sourceModel->setItem(row, col, item);
-        }
-    }
-
-    m_bulkUpdating = false;
-    invalidateSnapshots();
 }
 
 QSharedPointer<Core::TableData> DataTableView::buildSnapshot(QAbstractItemModel *model) const
@@ -549,42 +737,60 @@ void DataTableView::invalidateSnapshots() const
 
 void DataTableView::connectSourceModelSignals()
 {
-    connect(m_sourceModel, &QStandardItemModel::dataChanged,
+    if (!m_sourceModel) {
+        return;
+    }
+
+    connect(m_sourceModel, &QAbstractItemModel::dataChanged,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
                     emit dataChanged();
                 }
             });
-    connect(m_sourceModel, &QStandardItemModel::rowsInserted,
+    connect(m_sourceModel, &QAbstractItemModel::rowsInserted,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
                     emit dataChanged();
                 }
             });
-    connect(m_sourceModel, &QStandardItemModel::rowsRemoved,
+    connect(m_sourceModel, &QAbstractItemModel::rowsRemoved,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
                     emit dataChanged();
                 }
             });
-    connect(m_sourceModel, &QStandardItemModel::modelReset,
+    connect(m_sourceModel, &QAbstractItemModel::columnsInserted,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
                     emit dataChanged();
                 }
             });
-    connect(m_sourceModel, &QStandardItemModel::headerDataChanged,
+    connect(m_sourceModel, &QAbstractItemModel::columnsRemoved,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
                     emit dataChanged();
                 }
             });
-    connect(m_sourceModel, &QStandardItemModel::layoutChanged,
+    connect(m_sourceModel, &QAbstractItemModel::modelReset,
+            this, [this]() {
+                invalidateSnapshots();
+                if (!m_bulkUpdating) {
+                    emit dataChanged();
+                }
+            });
+    connect(m_sourceModel, &QAbstractItemModel::headerDataChanged,
+            this, [this]() {
+                invalidateSnapshots();
+                if (!m_bulkUpdating) {
+                    emit dataChanged();
+                }
+            });
+    connect(m_sourceModel, &QAbstractItemModel::layoutChanged,
             this, [this]() {
                 invalidateSnapshots();
                 if (!m_bulkUpdating) {
@@ -595,23 +801,8 @@ void DataTableView::connectSourceModelSignals()
 
 void DataTableView::sortColumn(int column, Qt::SortOrder order)
 {
-    if (column < 0 || column >= m_sourceModel->columnCount()) {
+    if (!m_sourceModel || column < 0 || column >= m_sourceModel->columnCount()) {
         return;
-    }
-
-    if (isNumericColumn(column)) {
-        for (int row = 0; row < m_sourceModel->rowCount(); ++row) {
-            QStandardItem *item = m_sourceModel->item(row, column);
-            if (!item) {
-                continue;
-            }
-
-            bool ok = false;
-            const double value = item->text().trimmed().toDouble(&ok);
-            if (ok) {
-                item->setData(value, Qt::EditRole);
-            }
-        }
     }
 
     m_sourceModel->sort(column, order);

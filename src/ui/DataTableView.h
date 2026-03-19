@@ -9,7 +9,7 @@
 #include "../core/TableData.h"
 
 class QAbstractItemModel;
-class QStandardItemModel;
+class TableDataModel;
 class TableFilterProxyModel;
 
 class TableItemDelegate : public QStyledItemDelegate
@@ -43,18 +43,27 @@ public:
     bool saveFile(const QString &filePath);
     void clearData();
     void setTableData(const QSharedPointer<Core::TableData> &data);
+    void setTableModel(const QSharedPointer<TableDataModel> &model);
 
     bool hasData() const;
     int totalRowCount() const;
     int visibleRowCount() const;
     int dataColumnCount() const;
 
+    QSharedPointer<TableDataModel> tableModel() const;
     Core::TableData *tableData() const;
     QSharedPointer<Core::TableData> snapshotData(bool visibleOnly = false) const;
+    QStringList columnHeaders() const;
 
     void applyFilter(int column, int condition, const QString &value);
     void clearFilter();
     bool hasActiveFilter() const;
+    int activeFilterColumn() const;
+    int activeFilterCondition() const;
+    QString activeFilterValue() const;
+    int sortColumnIndex() const;
+    Qt::SortOrder currentSortOrder() const;
+    void setSortState(int column, Qt::SortOrder order);
 
     QString selectedRangeInfo() const;
 
@@ -73,6 +82,9 @@ public:
     void resizeColumnsToContents();
     void autoResizeColumns();
     void copySelection();
+    bool pasteFromClipboard(QString *errorMessage = nullptr);
+    bool findText(const QString &text, Qt::CaseSensitivity caseSensitivity = Qt::CaseInsensitive);
+    bool goToCell(int row, int column, QString *errorMessage = nullptr);
 
 signals:
     void dataChanged();
@@ -86,18 +98,17 @@ private slots:
 
 private:
     void setupContextMenu();
-    void populateModelFromTableData(const Core::TableData *data);
     QSharedPointer<Core::TableData> buildSnapshot(QAbstractItemModel *model) const;
     void invalidateSnapshots() const;
     void connectSourceModelSignals();
     void sortColumn(int column, Qt::SortOrder order = Qt::AscendingOrder);
     bool isNumericColumn(int column) const;
 
-    QStandardItemModel *m_sourceModel;
+    QSharedPointer<TableDataModel> m_tableModel;
+    TableDataModel *m_sourceModel;
     TableFilterProxyModel *m_proxyModel;
     QMenu *m_contextMenu;
 
-    mutable QSharedPointer<Core::TableData> m_fullSnapshotCache;
     mutable QSharedPointer<Core::TableData> m_visibleSnapshotCache;
     mutable bool m_snapshotCacheDirty = true;
     bool m_bulkUpdating = false;

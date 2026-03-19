@@ -20,6 +20,7 @@ class StatisticsDialog;
 class SettingsDialog;
 class FilterDialog;
 class CalcColumnDialog;
+class TableDataModel;
 
 namespace Core {
     class TableData;
@@ -31,11 +32,26 @@ namespace Core {
 struct DocumentInfo {
     QString filePath;                    // 文件路径
     QString fileName;                    // 文件名
-    QSharedPointer<Core::TableData> data;// 数据对象
+    QSharedPointer<TableDataModel> model; // 文档模型
     bool unsavedChanges;                 // 未保存的更改
     int currentChartColumn;              // 当前图表数据列
+    bool hasActiveFilter;                // 是否有筛选
+    int filterColumn;                    // 筛选列
+    int filterCondition;                 // 筛选条件
+    QString filterValue;                 // 筛选值
+    int sortColumn;                      // 排序列
+    Qt::SortOrder sortOrder;             // 排序方向
 
-    DocumentInfo() : unsavedChanges(false), currentChartColumn(-1) {}
+    DocumentInfo()
+        : unsavedChanges(false)
+        , currentChartColumn(-1)
+        , hasActiveFilter(false)
+        , filterColumn(-1)
+        , filterCondition(0)
+        , sortColumn(-1)
+        , sortOrder(Qt::AscendingOrder)
+    {
+    }
 };
 
 /**
@@ -89,6 +105,9 @@ private slots:
     void onRedo();
     void onCopy();
     void onPaste();
+    void onFind();
+    void onFindNext();
+    void onGoToCell();
     void onSelectAll();
 
     // 数据菜单
@@ -179,6 +198,7 @@ private:
     // 状态
     QUndoStack *m_undoStack;
     QString m_currentFilePath;
+    QString m_lastSearchText;
     bool m_unsavedChanges = false;
 
     // 最近文件列表（最多保存10个）

@@ -32,6 +32,21 @@ bool TableFilterProxyModel::hasActiveFilter() const
     return m_hasFilter;
 }
 
+int TableFilterProxyModel::filterColumn() const
+{
+    return m_filterColumn;
+}
+
+TableFilterProxyModel::Condition TableFilterProxyModel::filterCondition() const
+{
+    return m_condition;
+}
+
+QString TableFilterProxyModel::filterValue() const
+{
+    return m_filterValue;
+}
+
 bool TableFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     if (!m_hasFilter || m_filterColumn < 0 || !sourceModel()) {

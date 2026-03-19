@@ -1,8 +1,14 @@
 #include "ExcelExporter.h"
+#include <QFileInfo>
 #include <QFile>
+#include <QMetaType>
 #include <QTextStream>
 #include <QDebug>
 #include <QDateTime>
+
+#ifdef ENABLE_OPENXLSX
+#include <OpenXLSX.hpp>
+#endif
 
 bool ExcelExporter::exportToHtmlExcel(const Core::TableData* tableData, const QString& filePath)
 {
@@ -69,6 +75,53 @@ bool ExcelExporter::exportToHtmlExcel(const Core::TableData* tableData, const QS
 
 bool ExcelExporter::exportToExcel(const Core::TableData* tableData, const QString& filePath)
 {
-    // 使用HTML格式的Excel导出
+#ifdef ENABLE_OPENXLSX
+    if (!tableData || tableData->isEmpty()) {
+        return false;
+    }
+
+    try {
+        OpenXLSX::XLDocument doc;
+        doc.create(QFileInfo(filePath).absoluteFilePath().toStdString(), OpenXLSX::XLForceOverwrite);
+
+        auto worksheet = doc.workbook().worksheet("Sheet1");
+
+        for (int col = 0; col < tableData->columnCount(); ++col) {
+            worksheet.cell(1, static_cast<uint16_t>(col + 1)).value() = tableData->header(col).toStdString();
+        }
+
+        for (int row = 0; row < tableData->rowCount(); ++row) {
+            for (int col = 0; col < tableData->columnCount(); ++col) {
+                const QVariant value = tableData->at(row, col);
+                auto cell = worksheet.cell(static_cast<uint32_t>(row + 2), static_cast<uint16_t>(col + 1));
+
+                if (value.metaType().id() == QMetaType::Bool) {
+                    cell.value() = value.toBool();
+                } else if (value.canConvert<qint64>() && value.toString().trimmed() == QString::number(value.toLongLong())) {
+                    cell.value() = static_cast<int64_t>(value.toLongLong());
+                } else {
+                    bool ok = false;
+                    const double number = value.toString().trimmed().toDouble(&ok);
+                    if (ok) {
+                        cell.value() = number;
+                    } else {
+                        cell.value() = value.toString().toStdString();
+                    }
+                }
+            }
+        }
+
+        doc.save();
+        doc.close();
+        return true;
+    } catch (const std::exception& e) {
+        qWarning() << "Excel export failed:" << e.what();
+        return false;
+    } catch (...) {
+        qWarning() << "Excel export failed with unknown error";
+        return false;
+    }
+#endif
+
     return exportToHtmlExcel(tableData, filePath);
 }

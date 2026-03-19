@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "DataTableView.h"
+#include "TableDataModel.h"
 #include "ChartView.h"
 #include "StatisticsDialog.h"
 #include "SettingsDialog.h"
@@ -9,6 +10,7 @@
 #include "../core/TableData.h"
 #include <QApplication>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QSplitter>
 #include <QListWidget>
@@ -23,6 +25,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QCursor>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <algorithm>
 
@@ -103,11 +106,16 @@ void MainWindow::createMenuBar()
     m_editMenu->addSeparator();
     m_editMenu->addAction("复制(&C)", QKeySequence::Copy, this, &MainWindow::onCopy);
     m_editMenu->addAction("粘贴(&P)", QKeySequence::Paste, this, &MainWindow::onPaste);
+    m_editMenu->addSeparator();
+    m_editMenu->addAction("查找(&F)...", QKeySequence::Find, this, &MainWindow::onFind);
+    m_editMenu->addAction("查找下一个(&N)", QKeySequence::FindNext, this, &MainWindow::onFindNext);
+    m_editMenu->addAction("定位到单元格(&G)...", QKeySequence(Qt::CTRL | Qt::Key_G), this, &MainWindow::onGoToCell);
+    m_editMenu->addSeparator();
     m_editMenu->addAction("全选(&A)", QKeySequence::SelectAll, this, &MainWindow::onSelectAll);
 
     // 数据菜单
     auto* dataMenu = menuBar()->addMenu("数据(&D)");
-    dataMenu->addAction("筛选(&F)...", QKeySequence("Ctrl+F"), this, &MainWindow::onFilterData);
+    dataMenu->addAction("筛选(&F)...", QKeySequence("Ctrl+Shift+L"), this, &MainWindow::onFilterData);
     dataMenu->addAction("计算列(&C)...", QKeySequence("Ctrl+Shift+C"), this, &MainWindow::onCalcColumn);
     dataMenu->addSeparator();
     dataMenu->addAction("清除格式", this, []() {
@@ -294,7 +302,7 @@ bool MainWindow::openFile(const QString &filePath)
         auto doc = QSharedPointer<DocumentInfo>::create();
         doc->filePath = normalizedPath;
         doc->fileName = QFileInfo(normalizedPath).fileName();
-        doc->data = m_dataTableView->snapshotData(false);
+        doc->model = m_dataTableView->tableModel();
         doc->unsavedChanges = false;
         doc->currentChartColumn = m_chartTypeWidget ? m_chartTypeWidget->currentRow() : -1;
 
@@ -343,7 +351,7 @@ bool MainWindow::saveFile(const QString &filePath)
         if (auto *doc = currentDocument()) {
             doc->filePath = normalizedPath;
             doc->fileName = QFileInfo(normalizedPath).fileName();
-            doc->data = m_dataTableView->snapshotData(false);
+            doc->model = m_dataTableView->tableModel();
         }
         addRecentFile(normalizedPath);
         m_fileInfoLabel->setText(QFileInfo(normalizedPath).fileName());
@@ -391,7 +399,7 @@ bool MainWindow::saveAsExcel(const QString &filePath)
 
     if (ExcelExporter::exportToExcel(tableData.data(), path)) {
         m_statusLabel->setText("Excel文件已导出: " + path);
-        QMessageBox::information(this, "成功", "数据已导出为Excel文件。\n\n注意：导出的文件是HTML表格格式，\n可以用Microsoft Excel打开。");
+        QMessageBox::information(this, "成功", "数据已导出为Excel文件。");
         return true;
     } else {
         QMessageBox::warning(this, "错误", "导出Excel文件失败");
@@ -507,7 +515,123 @@ void MainWindow::onCopy()
 
 void MainWindow::onPaste()
 {
-    // TODO: 实现粘贴功能
+    if (!m_dataTableView) {
+        return;
+    }
+
+    QString errorMessage;
+    if (!m_dataTableView->pasteFromClipboard(&errorMessage)) {
+        QMessageBox::information(this, "提示", errorMessage);
+        return;
+    }
+
+    m_statusLabel->setText("已从剪贴板粘贴数据");
+}
+
+void MainWindow::onFind()
+{
+    if (!m_dataTableView || !m_dataTableView->hasData()) {
+        QMessageBox::information(this, "提示", "请先打开数据文件");
+        return;
+    }
+
+    bool ok = false;
+    const QString text = QInputDialog::getText(
+        this,
+        "查找",
+        "输入要查找的文本:",
+        QLineEdit::Normal,
+        m_lastSearchText,
+        &ok);
+
+    if (!ok || text.trimmed().isEmpty()) {
+        return;
+    }
+
+    m_lastSearchText = text.trimmed();
+    if (!m_dataTableView->findText(m_lastSearchText)) {
+        QMessageBox::information(this, "查找", QString("未找到“%1”").arg(m_lastSearchText));
+        return;
+    }
+
+    m_statusLabel->setText(QString("已定位到“%1”").arg(m_lastSearchText));
+}
+
+void MainWindow::onFindNext()
+{
+    if (!m_dataTableView || !m_dataTableView->hasData()) {
+        QMessageBox::information(this, "提示", "请先打开数据文件");
+        return;
+    }
+
+    if (m_lastSearchText.isEmpty()) {
+        onFind();
+        return;
+    }
+
+    if (!m_dataTableView->findText(m_lastSearchText)) {
+        QMessageBox::information(this, "查找", QString("未找到“%1”").arg(m_lastSearchText));
+        return;
+    }
+
+    m_statusLabel->setText(QString("已定位到“%1”的下一处匹配").arg(m_lastSearchText));
+}
+
+void MainWindow::onGoToCell()
+{
+    if (!m_dataTableView || !m_dataTableView->hasData()) {
+        QMessageBox::information(this, "提示", "请先打开数据文件");
+        return;
+    }
+
+    bool ok = false;
+    const QString input = QInputDialog::getText(
+        this,
+        "定位到单元格",
+        "输入单元格位置（如 B3 或 3,2）:",
+        QLineEdit::Normal,
+        QString(),
+        &ok);
+
+    if (!ok || input.trimmed().isEmpty()) {
+        return;
+    }
+
+    const QString text = input.trimmed().toUpper();
+    int row = -1;
+    int column = -1;
+
+    const QRegularExpression a1Pattern("^([A-Z]+)(\\d+)$");
+    const auto a1Match = a1Pattern.match(text);
+    if (a1Match.hasMatch()) {
+        const QString columnText = a1Match.captured(1);
+        row = a1Match.captured(2).toInt() - 1;
+        column = 0;
+        for (const QChar ch : columnText) {
+            column = column * 26 + (ch.unicode() - 'A' + 1);
+        }
+        column -= 1;
+    } else {
+        const QRegularExpression rowColumnPattern("^(\\d+)\\s*[,，]\\s*(\\d+)$");
+        const auto rowColumnMatch = rowColumnPattern.match(text);
+        if (rowColumnMatch.hasMatch()) {
+            row = rowColumnMatch.captured(1).toInt() - 1;
+            column = rowColumnMatch.captured(2).toInt() - 1;
+        }
+    }
+
+    if (row < 0 || column < 0) {
+        QMessageBox::warning(this, "错误", "请输入有效的单元格位置，例如 B3 或 3,2");
+        return;
+    }
+
+    QString errorMessage;
+    if (!m_dataTableView->goToCell(row, column, &errorMessage)) {
+        QMessageBox::information(this, "定位失败", errorMessage);
+        return;
+    }
+
+    m_statusLabel->setText(QString("已定位到单元格 %1").arg(text));
 }
 
 void MainWindow::onSelectAll()
@@ -1000,13 +1124,25 @@ bool MainWindow::switchToDocument(int index)
         return false;
     }
 
-    if (newDoc->data && !newDoc->data->isEmpty()) {
-        m_dataTableView->setTableData(newDoc->data);
+    if (newDoc->model) {
+        m_dataTableView->setTableModel(newDoc->model);
     } else if (!newDoc->filePath.isEmpty() && m_dataTableView->loadFile(newDoc->filePath)) {
-        newDoc->data = m_dataTableView->snapshotData(false);
+        newDoc->model = m_dataTableView->tableModel();
     } else {
         m_dataTableView->clearData();
     }
+
+    if (newDoc->hasActiveFilter) {
+        m_dataTableView->applyFilter(
+            newDoc->filterColumn,
+            newDoc->filterCondition,
+            newDoc->filterValue);
+    } else {
+        m_dataTableView->clearFilter();
+    }
+
+    m_dataTableView->setSortState(newDoc->sortColumn, newDoc->sortOrder);
+    m_dataTableView->autoResizeColumns();
 
     m_currentFilePath = newDoc->filePath;
     m_unsavedChanges = newDoc->unsavedChanges;
@@ -1124,8 +1260,14 @@ void MainWindow::syncCurrentDocumentState()
         return;
     }
 
-    doc->data = m_dataTableView->snapshotData(false);
+    doc->model = m_dataTableView->tableModel();
     doc->unsavedChanges = m_unsavedChanges;
+    doc->hasActiveFilter = m_dataTableView->hasActiveFilter();
+    doc->filterColumn = m_dataTableView->activeFilterColumn();
+    doc->filterCondition = m_dataTableView->activeFilterCondition();
+    doc->filterValue = m_dataTableView->activeFilterValue();
+    doc->sortColumn = m_dataTableView->sortColumnIndex();
+    doc->sortOrder = m_dataTableView->currentSortOrder();
     if (m_chartTypeWidget) {
         doc->currentChartColumn = m_chartTypeWidget->currentRow();
     }

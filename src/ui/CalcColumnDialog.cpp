@@ -5,7 +5,6 @@
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QMessageBox>
-#include <QStandardItemModel>
 
 CalcColumnDialog::CalcColumnDialog(QTableView* tableView, QWidget* parent)
     : QDialog(parent)
@@ -14,8 +13,8 @@ CalcColumnDialog::CalcColumnDialog(QTableView* tableView, QWidget* parent)
     setWindowTitle("计算列");
     resize(500, 400);
 
-    updateAvailableColumns();
     setupUI();
+    updateAvailableColumns();
 }
 
 CalcColumnDialog::~CalcColumnDialog() = default;
@@ -31,6 +30,13 @@ void CalcColumnDialog::setupUI()
     sourceLayout->addWidget(m_sourceColumnsList);
     sourceGroup->setLayout(sourceLayout);
     layout->addWidget(sourceGroup);
+
+    auto* calculatedGroup = new QGroupBox("待应用的计算列");
+    auto* calculatedLayout = new QVBoxLayout();
+    m_calculatedColumnsList = new QListWidget();
+    calculatedLayout->addWidget(m_calculatedColumnsList);
+    calculatedGroup->setLayout(calculatedLayout);
+    layout->addWidget(calculatedGroup);
 
     // 计算参数
     auto* calcGroup = new QGroupBox("计算参数");
@@ -78,11 +84,13 @@ void CalcColumnDialog::setupUI()
 void CalcColumnDialog::updateAvailableColumns()
 {
     m_availableColumns.clear();
-    m_sourceColumnsList->clear();
+    if (m_sourceColumnsList) {
+        m_sourceColumnsList->clear();
+    }
 
     if (!m_tableView) return;
 
-    auto* model = qobject_cast<QStandardItemModel*>(m_tableView->model());
+    auto* model = m_tableView->model();
     if (!model) return;
 
     for (int col = 0; col < model->columnCount(); ++col) {
