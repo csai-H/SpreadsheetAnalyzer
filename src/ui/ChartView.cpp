@@ -78,14 +78,14 @@ void ChartView::setupToolbar()
     m_widthSpinBox = new QSpinBox();
     m_widthSpinBox->setRange(400, 4000);
     m_widthSpinBox->setValue(1200);
-    m_widthSpinBox->setSuffix(" px");
+    m_widthSpinBox->setSuffix(" 像素");
     m_widthSpinBox->setToolTip("导出图片的宽度");
     toolbarLayout->addWidget(m_widthSpinBox);
 
     m_heightSpinBox = new QSpinBox();
     m_heightSpinBox->setRange(300, 3000);
     m_heightSpinBox->setValue(800);
-    m_heightSpinBox->setSuffix(" px");
+    m_heightSpinBox->setSuffix(" 像素");
     m_heightSpinBox->setToolTip("导出图片的高度");
     toolbarLayout->addWidget(m_heightSpinBox);
 
@@ -132,7 +132,7 @@ void ChartView::createSampleChart()
     chart->addSeries(series);
 
     auto *axisX = new QBarCategoryAxis();
-    axisX->append({"A", "B", "C", "D", "E"});
+    axisX->append({"甲", "乙", "丙", "丁", "戊"});
     chart->addAxis(axisX, Qt::AlignBottom);
     series->attachAxis(axisX);
 

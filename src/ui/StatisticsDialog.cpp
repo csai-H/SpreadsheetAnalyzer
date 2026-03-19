@@ -263,7 +263,7 @@ void StatisticsDialog::calculateForecasting()
         output += QString("  期 %1: %2\n").arg(i + 1).arg(result.predicted[i], 0, 'f', 4);
     }
 
-    output += QString("\n误差指标 (MSE): %1\n").arg(result.errorMetric, 0, 'f', 6);
+    output += QString("\n均方误差（MSE）: %1\n").arg(result.errorMetric, 0, 'f', 6);
 
     m_forecastResultsTextEdit->setText(output);
 }

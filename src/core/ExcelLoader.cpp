@@ -183,7 +183,7 @@ LoadResult ExcelLoader::load(const QString& filePath)
         } else {
             // 如果没有表头，生成默认列名
             for (int i = 0; i < actualDataCols; ++i) {
-                tableData->setHeader(i, "Column" + QString::number(i + 1));
+                tableData->setHeader(i, "列" + QString::number(i + 1));
             }
         }
 

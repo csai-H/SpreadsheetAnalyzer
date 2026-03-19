@@ -83,7 +83,7 @@ void TableData::resize(int rows, int columns)
 
     // 调整表头
     while (m_impl->m_headers.size() < columns) {
-        m_impl->m_headers.append(QString("Column %1").arg(m_impl->m_headers.size() + 1));
+        m_impl->m_headers.append(QString("列%1").arg(m_impl->m_headers.size() + 1));
     }
     m_impl->m_headers.resize(columns);
 }

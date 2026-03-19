@@ -25,9 +25,63 @@
 #include <QAction>
 #include <QMenu>
 #include <QCursor>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <algorithm>
+
+namespace {
+
+enum class SavePromptChoice {
+    Save,
+    Discard,
+    Cancel
+};
+
+SavePromptChoice showSaveChangesDialog(QWidget *parent, const QString &text)
+{
+    QMessageBox messageBox(parent);
+    messageBox.setIcon(QMessageBox::Question);
+    messageBox.setWindowTitle("保存更改");
+    messageBox.setText(text);
+
+    auto *saveButton = messageBox.addButton("保存", QMessageBox::AcceptRole);
+    auto *discardButton = messageBox.addButton("不保存", QMessageBox::DestructiveRole);
+    auto *cancelButton = messageBox.addButton("取消", QMessageBox::RejectRole);
+    Q_UNUSED(discardButton);
+    messageBox.setDefaultButton(qobject_cast<QPushButton *>(saveButton));
+    messageBox.exec();
+
+    if (messageBox.clickedButton() == saveButton) {
+        return SavePromptChoice::Save;
+    }
+    if (messageBox.clickedButton() == cancelButton || messageBox.clickedButton() == nullptr) {
+        return SavePromptChoice::Cancel;
+    }
+    return SavePromptChoice::Discard;
+}
+
+bool showYesNoDialog(QWidget *parent,
+                     const QString &title,
+                     const QString &text,
+                     const QString &yesText = "是",
+                     const QString &noText = "否")
+{
+    QMessageBox messageBox(parent);
+    messageBox.setIcon(QMessageBox::Question);
+    messageBox.setWindowTitle(title);
+    messageBox.setText(text);
+
+    auto *yesButton = messageBox.addButton(yesText, QMessageBox::AcceptRole);
+    auto *noButton = messageBox.addButton(noText, QMessageBox::RejectRole);
+    Q_UNUSED(noButton);
+    messageBox.setDefaultButton(qobject_cast<QPushButton *>(yesButton));
+    messageBox.exec();
+
+    return messageBox.clickedButton() == yesButton;
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -476,6 +530,19 @@ void MainWindow::onOpenFile()
 
     if (!fileName.isEmpty()) {
         if (hasUnsavedChanges()) {
+            const auto choice = showSaveChangesDialog(this, "当前文档有未保存的更改，是否先保存？");
+            if (choice == SavePromptChoice::Save) {
+                onSaveFile();
+            } else if (choice == SavePromptChoice::Cancel) {
+                return;
+            }
+        }
+
+        openFile(fileName);
+        return;
+
+#if 0
+        if (hasUnsavedChanges()) {
             auto reply = QMessageBox::question(
                 this,
                 "保存更改",
@@ -491,6 +558,7 @@ void MainWindow::onOpenFile()
         }
 
         openFile(fileName);
+#endif
     }
 }
 
@@ -503,6 +571,25 @@ void MainWindow::onCloseFile()
 {
     if (m_currentDocumentIndex >= 0) {
         closeDocument(m_currentDocumentIndex);
+        return;
+    }
+
+    if (hasUnsavedChanges()) {
+        const auto choice = showSaveChangesDialog(this, "当前文档有未保存的更改，是否在关闭前保存？");
+        if (choice == SavePromptChoice::Save) {
+            if (!saveFile()) {
+                return;
+            }
+        } else if (choice == SavePromptChoice::Cancel) {
+            return;
+        }
+
+        m_currentFilePath.clear();
+        m_unsavedChanges = false;
+        m_dataTableView->clearData();
+        updateWindowTitle();
+        m_statusLabel->setText("就绪");
+        m_fileInfoLabel->clear();
         return;
     }
 
@@ -915,6 +1002,15 @@ void MainWindow::setUnsavedChanges(bool unsaved)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (!closeAllDocuments()) {
+        event->ignore();
+        return;
+    }
+
+    event->accept();
+    return;
+
+#if 0
     if (hasUnsavedChanges()) {
         auto reply = QMessageBox::question(
             this,
@@ -935,6 +1031,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
 
     event->accept();
+#endif
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -1061,6 +1158,19 @@ void MainWindow::onOpenRecentFile()
         return;
     }
 
+    if (!QFileInfo::exists(filePath)) {
+        if (showYesNoDialog(this,
+                            "文件不存在",
+                            "该文件已被移动或删除。\n是否从最近文件列表中移除？",
+                            "移除",
+                            "保留")) {
+            m_recentFiles.removeAll(filePath);
+            updateRecentFilesMenu();
+            saveRecentFiles();
+        }
+        return;
+    }
+
     // 检查文件是否存在
     if (!QFileInfo::exists(filePath)) {
         auto reply = QMessageBox::question(
@@ -1084,6 +1194,15 @@ void MainWindow::onOpenRecentFile()
 
 void MainWindow::onClearRecentFiles()
 {
+    if (showYesNoDialog(this,
+                        "清除最近文件",
+                        "确定要清除所有最近文件记录吗？",
+                        "清除",
+                        "取消")) {
+        clearRecentFiles();
+    }
+    return;
+
     auto reply = QMessageBox::question(
         this,
         "清除最近文件",
@@ -1200,26 +1319,31 @@ bool MainWindow::switchToDocument(int index)
 
     updateDocumentList();
     updateDataInfoLabel();
-    m_statusLabel->setText(QString("Active document: %1").arg(newDoc->fileName));
+    m_statusLabel->setText(QString("当前文档：%1").arg(newDoc->fileName));
     return true;
 }
 
-void MainWindow::closeDocument(int index)
+bool MainWindow::closeDocument(int index)
 {
     if (index < 0 || index >= m_documents.size()) {
-        return;
+        return false;
     }
 
     auto *doc = m_documents[index].data();
     if (doc->unsavedChanges) {
-        auto reply = QMessageBox::question(
-            this,
-            "Close Document",
-            QString("Document '%1' has unsaved changes. Save before closing?").arg(doc->fileName),
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
-        );
+        QMessageBox messageBox(this);
+        messageBox.setIcon(QMessageBox::Question);
+        messageBox.setWindowTitle("关闭文档");
+        messageBox.setText(QString("文档“%1”有未保存的更改，是否在关闭前保存？").arg(doc->fileName));
 
-        if (reply == QMessageBox::Save) {
+        auto *saveButton = messageBox.addButton("保存", QMessageBox::AcceptRole);
+        auto *discardButton = messageBox.addButton("不保存", QMessageBox::DestructiveRole);
+        auto *cancelButton = messageBox.addButton("取消", QMessageBox::RejectRole);
+        Q_UNUSED(discardButton);
+        messageBox.setDefaultButton(qobject_cast<QPushButton *>(saveButton));
+        messageBox.exec();
+
+        if (messageBox.clickedButton() == saveButton) {
             const int oldIndex = m_currentDocumentIndex;
             if (oldIndex != index) {
                 switchToDocument(index);
@@ -1228,13 +1352,14 @@ void MainWindow::closeDocument(int index)
                 if (oldIndex != index && oldIndex >= 0 && oldIndex < m_documents.size()) {
                     switchToDocument(oldIndex);
                 }
-                return;
+                return false;
             }
             if (oldIndex != index && oldIndex >= 0 && oldIndex < m_documents.size()) {
                 switchToDocument(oldIndex);
             }
-        } else if (reply == QMessageBox::Cancel) {
-            return;
+        } else if (messageBox.clickedButton() == cancelButton
+                   || messageBox.clickedButton() == nullptr) {
+            return false;
         }
     }
 
@@ -1256,7 +1381,7 @@ void MainWindow::closeDocument(int index)
             }
             updateWindowTitle();
             m_fileInfoLabel->clear();
-            m_statusLabel->setText("No document open");
+            m_statusLabel->setText("当前没有打开的文档");
             updateDataInfoLabel();
         } else {
             const int newIndex = qMin(index, m_documents.size() - 1);
@@ -1267,13 +1392,18 @@ void MainWindow::closeDocument(int index)
     }
 
     updateDocumentList();
+    return true;
 }
 
-void MainWindow::closeAllDocuments()
+bool MainWindow::closeAllDocuments()
 {
     while (!m_documents.isEmpty()) {
-        closeDocument(0);
+        const int indexToClose = m_currentDocumentIndex >= 0 ? m_currentDocumentIndex : 0;
+        if (!closeDocument(indexToClose)) {
+            return false;
+        }
     }
+    return true;
 }
 
 DocumentInfo* MainWindow::currentDocument()
@@ -1413,7 +1543,9 @@ void MainWindow::onDocumentListCloseRequested()
         }
         // 从后往前关闭，避免索引问题
         for (int i = toClose.size() - 1; i >= 0; --i) {
-            closeDocument(toClose[i]);
+            if (!closeDocument(toClose[i])) {
+                break;
+            }
         }
     } else if (selected == closeAllAction) {
         closeAllDocuments();
@@ -1438,12 +1570,12 @@ void MainWindow::updateDataInfoLabel()
 
         QString text;
         if (m_dataTableView->hasActiveFilter() && visibleRows != totalRows) {
-            text = QString("%1 / %2 rows x %3 cols")
+            text = QString("%1 / %2 行 x %3 列")
                        .arg(visibleRows)
                        .arg(totalRows)
                        .arg(cols);
         } else {
-            text = QString("%1 rows x %2 cols").arg(totalRows).arg(cols);
+            text = QString("%1 行 x %2 列").arg(totalRows).arg(cols);
         }
         m_dataInfoLabel->setText(text);
 
@@ -1457,6 +1589,6 @@ void MainWindow::updateDataInfoLabel()
         return;
     }
 
-    m_dataInfoLabel->setText("0 rows x 0 cols");
+    m_dataInfoLabel->setText("0 行 x 0 列");
     m_dataInfoLabel->setStyleSheet("");
 }

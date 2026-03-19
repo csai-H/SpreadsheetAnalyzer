@@ -396,10 +396,10 @@ QString DataTableView::getSelectionStatsText() const
 
     auto formatNumber = [](double value, int decimals = 2) {
         if (qAbs(value) >= 1000000.0) {
-            return QString::number(value / 1000000.0, 'f', 1) + "M";
+            return QString::number(value / 1000000.0, 'f', 1) + "百万";
         }
         if (qAbs(value) >= 1000.0) {
-            return QString::number(value / 1000.0, 'f', 1) + "K";
+            return QString::number(value / 1000.0, 'f', 1) + "千";
         }
         if (qFuzzyCompare(value, qFloor(value))) {
             return QString::number(static_cast<qint64>(value));

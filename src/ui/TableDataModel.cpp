@@ -22,7 +22,7 @@ public:
         , m_oldValue(oldValue)
         , m_newValue(newValue)
     {
-        setText(QObject::tr("Edit Cell"));
+        setText(QObject::tr("编辑单元格"));
     }
 
     void undo() override
@@ -55,7 +55,7 @@ public:
         , m_oldValue(oldValue)
         , m_newValue(newValue)
     {
-        setText(QObject::tr("Rename Column"));
+        setText(QObject::tr("重命名列"));
     }
 
     void undo() override
@@ -83,7 +83,7 @@ public:
         , m_row(row)
         , m_count(count)
     {
-        setText(QObject::tr("Insert Rows"));
+        setText(QObject::tr("插入行"));
     }
 
     void undo() override
@@ -110,7 +110,7 @@ public:
         , m_column(column)
         , m_count(count)
     {
-        setText(QObject::tr("Insert Columns"));
+        setText(QObject::tr("插入列"));
     }
 
     void undo() override
@@ -137,7 +137,7 @@ public:
         , m_row(row)
         , m_rows(model->rowsSnapshot(row, count))
     {
-        setText(QObject::tr("Delete Rows"));
+        setText(QObject::tr("删除行"));
     }
 
     void undo() override
@@ -170,7 +170,7 @@ public:
             m_headers.append(model->headerValue(currentColumn));
             m_columnValues.append(tableData->getColumn(currentColumn));
         }
-        setText(QObject::tr("Delete Columns"));
+        setText(QObject::tr("删除列"));
     }
 
     void undo() override

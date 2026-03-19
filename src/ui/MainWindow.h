@@ -141,8 +141,8 @@ private:
     void updateDocumentList();
     int findDocument(const QString &filePath);
     bool switchToDocument(int index);
-    void closeDocument(int index);
-    void closeAllDocuments();
+    bool closeDocument(int index);
+    bool closeAllDocuments();
     DocumentInfo *currentDocument();
     void syncCurrentDocumentState();
     void refreshChartColumnList();

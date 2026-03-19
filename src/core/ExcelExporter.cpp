@@ -84,7 +84,7 @@ bool ExcelExporter::exportToExcel(const Core::TableData* tableData, const QStrin
         OpenXLSX::XLDocument doc;
         doc.create(QFileInfo(filePath).absoluteFilePath().toStdString(), OpenXLSX::XLForceOverwrite);
 
-        auto worksheet = doc.workbook().worksheet("Sheet1");
+        auto worksheet = doc.workbook().worksheet("工作表1");
 
         for (int col = 0; col < tableData->columnCount(); ++col) {
             worksheet.cell(1, static_cast<uint16_t>(col + 1)).value() = tableData->header(col).toStdString();

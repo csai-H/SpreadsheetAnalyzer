@@ -27,6 +27,10 @@ SettingsDialog::SettingsDialog(QWidget *parent)
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel |
         QDialogButtonBox::Apply | QDialogButtonBox::Reset
     );
+    buttonBox->button(QDialogButtonBox::Ok)->setText("确定");
+    buttonBox->button(QDialogButtonBox::Cancel)->setText("取消");
+    buttonBox->button(QDialogButtonBox::Apply)->setText("应用");
+    buttonBox->button(QDialogButtonBox::Reset)->setText("恢复默认");
     connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::onAccepted);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
     connect(buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::onApply);
@@ -90,7 +94,7 @@ void SettingsDialog::setupViewTab()
     m_spinFontSize = new QSpinBox();
     m_spinFontSize->setRange(8, 24);
     m_spinFontSize->setValue(10);
-    m_spinFontSize->setSuffix(" pt");
+    m_spinFontSize->setSuffix(" 磅");
 
     m_comboTheme = new QComboBox();
     m_comboTheme->addItem("默认");
@@ -190,7 +194,7 @@ void SettingsDialog::setupChartTab()
     m_spinAnimationDuration = new QSpinBox();
     m_spinAnimationDuration->setRange(100, 2000);
     m_spinAnimationDuration->setValue(500);
-    m_spinAnimationDuration->setSuffix(" ms");
+    m_spinAnimationDuration->setSuffix(" 毫秒");
 
     m_comboDefaultChartType = new QComboBox();
     m_comboDefaultChartType->addItem("柱状图");

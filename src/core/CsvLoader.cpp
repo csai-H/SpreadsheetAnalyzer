@@ -100,14 +100,14 @@ LoadResult CsvLoader::load(const QString& filePath)
         for (int col = 0; col < headers.size() && col < maxColumns; ++col) {
             QString header = headers[col];
             if (header.isEmpty()) {
-                header = QString("Column %1").arg(col + 1);
+                header = QString("列%1").arg(col + 1);
             }
             tableData->setHeader(col, header);
         }
     } else {
         // 如果没有表头，设置默认列名
         for (int col = 0; col < maxColumns; ++col) {
-            tableData->setHeader(col, QString("Column %1").arg(col + 1));
+            tableData->setHeader(col, QString("列%1").arg(col + 1));
         }
     }
 
