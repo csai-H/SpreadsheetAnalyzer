@@ -286,19 +286,11 @@ bool MainWindow::openFile(const QString &filePath)
     m_statusLabel->setText("正在加载文件...");
     qApp->processEvents();
 
-    bool success = m_dataTableView->loadFile(filePath);
+    const bool success = m_dataTableView->loadFile(filePath);
 
     m_progressBar->setVisible(false);
 
     if (success) {
-/*
-        // 检查是否已打开
-            // 文档已打开，切换到该文档
-            m_statusLabel->setText("文件已打开，切换到该文档");
-        }
-
-        // 创建文档对象
-*/
         auto doc = QSharedPointer<DocumentInfo>::create();
         doc->filePath = normalizedPath;
         doc->fileName = QFileInfo(normalizedPath).fileName();
@@ -313,25 +305,8 @@ bool MainWindow::openFile(const QString &filePath)
         // 更新界面
         m_currentFilePath = normalizedPath;
         setUnsavedChanges(false);
-        if (auto *doc = currentDocument()) {
-            doc->filePath = normalizedPath;
-            doc->fileName = QFileInfo(normalizedPath).fileName();
-            doc->data = m_dataTableView->snapshotData(false);
-        }
-        addRecentFile(normalizedPath);
-        m_fileInfoLabel->setText(QFileInfo(normalizedPath).fileName());
-        if (auto *doc = currentDocument()) {
-            doc->filePath = normalizedPath;
-            doc->fileName = QFileInfo(normalizedPath).fileName();
-            doc->data = m_dataTableView->snapshotData(false);
-        }
-        addRecentFile(normalizedPath);
-        m_fileInfoLabel->setText(QFileInfo(normalizedPath).fileName());
         m_fileInfoLabel->setText(doc->fileName);
         m_statusLabel->setText("文件加载完成");
-
-        QFileInfo fileInfo(normalizedPath);
-        m_fileInfoLabel->setText(fileInfo.fileName());
 
         // 更新文档列表
         updateDocumentList();
@@ -703,48 +678,34 @@ void MainWindow::onFileLoaded(const QString &filePath)
 {
     Q_UNUSED(filePath);
 
+    if (!m_chartTypeWidget) {
+        return;
+    }
+
     const auto tableData = m_dataTableView->snapshotData(false);
-    if (m_chartTypeWidget) {
-        QSignalBlocker blocker(m_chartTypeWidget);
-        m_chartTypeWidget->clear();
-
-        if (!tableData || tableData->isEmpty() || tableData->columnCount() <= 1) {
-            m_chartDataSnapshot.clear();
-            m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
-            return;
-        }
-
-        for (int col = 1; col < tableData->columnCount(); ++col) {
-            m_chartTypeWidget->addItem(tableData->header(col));
-        }
-
-        int selectedRow = 0;
-        if (auto *doc = currentDocument()) {
-            selectedRow = doc->currentChartColumn;
-        }
-
-        selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
-        m_chartTypeWidget->setCurrentRow(selectedRow);
-        blocker.unblock();
-        refreshCurrentChart();
-        return;
-    }
-
-    if (!tableData || tableData->isEmpty()) {
-        return;
-    }
-
-    // 填充图表数据列列表（跳过第一列，通常是名称/日期列）
+    QSignalBlocker blocker(m_chartTypeWidget);
     m_chartTypeWidget->clear();
-    for (int col = 1; col < tableData->columnCount(); ++col) {
-        QString header = tableData->header(col);
-        m_chartTypeWidget->addItem(header);
+
+    if (!tableData || tableData->isEmpty() || tableData->columnCount() <= 1) {
+        m_chartDataSnapshot.clear();
+        m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
+        return;
     }
 
-    // 默认选择第一列（通常是第二列，如销售额）
-    if (m_chartTypeWidget->count() > 0) {
-        m_chartTypeWidget->setCurrentRow(0);
+    for (int col = 1; col < tableData->columnCount(); ++col) {
+        m_chartTypeWidget->addItem(tableData->header(col));
     }
+
+    int selectedRow = 0;
+    if (auto *doc = currentDocument()) {
+        selectedRow = doc->currentChartColumn;
+    }
+
+    selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
+    m_chartTypeWidget->setCurrentRow(selectedRow);
+    blocker.unblock();
+    refreshCurrentChart();
+    return;
 }
 
 void MainWindow::onChartColumnChanged(int row)
@@ -769,23 +730,6 @@ void MainWindow::onChartColumnChanged(int row)
         doc->currentChartColumn = row;
     }
     return;
-/*
-
-    if (!tableData || tableData->isEmpty() || row < 0) {
-        m_chartDataSnapshot.clear();
-        return;
-    }
-
-    // row + 1 因为跳过了第一列（通常是名称/日期列）
-    // int column = row + 1;
-    if (column < tableData->columnCount()) {
-        m_chartDataSnapshot = tableData;
-        m_chartView->setTableData(m_chartDataSnapshot, column);
-        if (auto *doc = currentDocument()) {
-            doc->currentChartColumn = row;
-        }
-    }
-*/
 }
 
 void MainWindow::onCurrentTabChanged(int index)
@@ -1040,7 +984,6 @@ int MainWindow::findDocument(const QString &filePath)
     return -1;
 }
 
-#if 0
 bool MainWindow::switchToDocument(int index)
 {
     if (index < 0 || index >= m_documents.size()) {
@@ -1092,218 +1035,9 @@ bool MainWindow::switchToDocument(int index)
     updateDocumentList();
     updateDataInfoLabel();
     refreshCurrentChart();
-    m_statusLabel->setText(QString("宸插垏鎹㈠埌: %1").arg(newDoc->fileName));
-    return true;
-
-    // 切换到新文档
-    m_currentDocumentIndex = index;
-    auto *newDoc = m_documents[index].data();
-
-    // 重新加载文件（简单方案，会从文件读取数据）
-    m_dataTableView->loadFile(newDoc->filePath);
-
-    // 更新界面
-    m_currentFilePath = newDoc->filePath;
-    m_unsavedChanges = newDoc->unsavedChanges;
-    updateWindowTitle();
-
-    QFileInfo fileInfo(newDoc->filePath);
-    m_fileInfoLabel->setText(fileInfo.fileName());
-
-    // 更新图表列选择列表
-    if (m_chartTypeWidget) {
-        m_chartTypeWidget->clear();
-        auto *data = m_dataTableView->tableData();
-        for (int col = 0; col < data->columnCount(); ++col) {
-            m_chartTypeWidget->addItem(data->header(col));
-        }
-        if (newDoc->currentChartColumn >= 0 && newDoc->currentChartColumn < data->columnCount()) {
-            m_chartTypeWidget->setCurrentRow(newDoc->currentChartColumn);
-        }
-    }
-
-    // 更新文档列表显示
-    updateDocumentList();
-
-    // 更新状态栏行列数
-    updateDataInfoLabel();
-
-    m_statusLabel->setText(QString("已切换到: %1").arg(newDoc->fileName));
-
+    m_statusLabel->setText(QString("Active document: %1").arg(newDoc->fileName));
     return true;
 }
-
-#endif
-
-bool MainWindow::switchToDocument(int index)
-{
-    if (index < 0 || index >= m_documents.size()) {
-        return false;
-    }
-
-    if (index != m_currentDocumentIndex) {
-        syncCurrentDocumentState();
-    }
-
-    m_currentDocumentIndex = index;
-    auto *newDoc = currentDocument();
-    if (!newDoc) {
-        return false;
-    }
-
-    if (newDoc->data && !newDoc->data->isEmpty()) {
-        m_dataTableView->setTableData(newDoc->data);
-    } else if (!newDoc->filePath.isEmpty() && m_dataTableView->loadFile(newDoc->filePath)) {
-        newDoc->data = m_dataTableView->snapshotData(false);
-    } else {
-        m_dataTableView->clearData();
-    }
-
-    m_currentFilePath = newDoc->filePath;
-    m_unsavedChanges = newDoc->unsavedChanges;
-    updateWindowTitle();
-    m_fileInfoLabel->setText(newDoc->fileName);
-
-    if (m_chartTypeWidget) {
-        const auto tableData = m_dataTableView->snapshotData(false);
-        QSignalBlocker blocker(m_chartTypeWidget);
-        m_chartTypeWidget->clear();
-
-        if (tableData && tableData->columnCount() > 1) {
-            for (int col = 1; col < tableData->columnCount(); ++col) {
-                m_chartTypeWidget->addItem(tableData->header(col));
-            }
-
-            int selectedRow = newDoc->currentChartColumn;
-            selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
-            m_chartTypeWidget->setCurrentRow(selectedRow);
-        } else {
-            m_chartDataSnapshot.clear();
-            m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
-        }
-    }
-
-    updateDocumentList();
-    updateDataInfoLabel();
-    refreshCurrentChart();
-    m_statusLabel->setText(QString("Switched to: %1").arg(newDoc->fileName));
-    return true;
-}
-
-/*
-void MainWindow::closeDocument(int index)
-{
-    if (index < 0 || index >= m_documents.size()) {
-        return;
-    }
-
-    auto *doc = m_documents[index].data();
-    if (doc->unsavedChanges) {
-        auto reply = QMessageBox::question(
-            this,
-            "鍏抽棴鏂囨。",
-            QString("鏂囨。 '%1' 鏈夋湭淇濆瓨鐨勬洿鏀癸紝鏄惁淇濆瓨锛?).arg(doc->fileName),
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
-        );
-
-        if (reply == QMessageBox::Save) {
-            const int oldIndex = m_currentDocumentIndex;
-            if (oldIndex != index) {
-                switchToDocument(index);
-            }
-            if (!saveFile()) {
-                if (oldIndex != index && oldIndex >= 0 && oldIndex < m_documents.size()) {
-                    switchToDocument(oldIndex);
-                }
-                return;
-            }
-            if (oldIndex != index && oldIndex >= 0 && oldIndex < m_documents.size()) {
-                switchToDocument(oldIndex);
-            }
-        } else if (reply == QMessageBox::Cancel) {
-            return;
-        }
-    }
-
-    m_documents.removeAt(index);
-
-    if (index == m_currentDocumentIndex) {
-        if (m_documents.isEmpty()) {
-            m_currentDocumentIndex = -1;
-            m_currentFilePath.clear();
-            m_unsavedChanges = false;
-            m_dataTableView->clearData();
-            m_chartDataSnapshot.clear();
-            m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
-            if (m_chartTypeWidget) {
-                QSignalBlocker blocker(m_chartTypeWidget);
-                m_chartTypeWidget->clear();
-            }
-            updateWindowTitle();
-            m_fileInfoLabel->clear();
-            m_statusLabel->setText("鏃犳墦寮€鐨勬枃妗?);
-            updateDataInfoLabel();
-        } else {
-            const int newIndex = qMin(index, m_documents.size() - 1);
-            switchToDocument(newIndex);
-        }
-    } else if (index < m_currentDocumentIndex) {
-        --m_currentDocumentIndex;
-    }
-
-    updateDocumentList();
-    return;
-
-    auto *doc = m_documents[index].data();
-
-    // 检查是否有未保存的更改
-    if (doc->unsavedChanges) {
-        auto reply = QMessageBox::question(
-            this,
-            "关闭文档",
-            QString("文档 '%1' 有未保存的更改，是否保存？").arg(doc->fileName),
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
-        );
-
-        if (reply == QMessageBox::Save) {
-            // 切换到该文档并保存
-            int oldIndex = m_currentDocumentIndex;
-            switchToDocument(index);
-            saveFile();
-            switchToDocument(oldIndex);
-        } else if (reply == QMessageBox::Cancel) {
-            return;
-        }
-    }
-
-    // 移除文档
-    m_documents.removeAt(index);
-
-    // 如果关闭的是当前文档，切换到其他文档
-    if (index == m_currentDocumentIndex) {
-        if (m_documents.isEmpty()) {
-            // 没有文档了
-            m_currentDocumentIndex = -1;
-            m_currentFilePath.clear();
-            m_unsavedChanges = false;
-            updateWindowTitle();
-            m_fileInfoLabel->setText("无文件");
-            m_statusLabel->setText("无打开的文档");
-            updateDataInfoLabel();  // 更新行列数为0
-        } else {
-            // 切换到前一个文档
-            int newIndex = (index > 0) ? index - 1 : 0;
-            switchToDocument(newIndex);
-        }
-    } else if (index < m_currentDocumentIndex) {
-        // 如果关闭的文档在当前文档之前，更新索引
-        m_currentDocumentIndex--;
-    }
-
-    updateDocumentList();
-}
-
-*/
 
 void MainWindow::closeDocument(int index)
 {
@@ -1484,59 +1218,6 @@ void MainWindow::onCloseCurrentDocument()
 }
 
 // ==================== 状态栏更新 ====================
-
-/*
-void MainWindow::updateDataInfoLabel()
-{
-    if (m_dataTableView && m_dataTableView->hasData()) {
-        const int totalRows = m_dataTableView->totalRowCount();
-        const int visibleRows = m_dataTableView->visibleRowCount();
-        const int cols = m_dataTableView->dataColumnCount();
-
-        QString text;
-        if (m_dataTableView->hasActiveFilter() && visibleRows != totalRows) {
-            text = QString("%1 / %2 琛?脳 %3 鍒?)
-                       .arg(visibleRows)
-                       .arg(totalRows)
-                       .arg(cols);
-        } else {
-            text = QString("%1 琛?脳 %2 鍒?).arg(totalRows).arg(cols);
-        }
-        m_dataInfoLabel->setText(text);
-
-        if (totalRows > 100000) {
-            m_dataInfoLabel->setStyleSheet("QLabel { color: red; }");
-        } else if (totalRows > 10000) {
-            m_dataInfoLabel->setStyleSheet("QLabel { color: orange; }");
-        } else {
-            m_dataInfoLabel->setStyleSheet("");
-        }
-        return;
-    }
-
-    if (m_dataTableView && m_dataTableView->tableData()) {
-        auto *data = m_dataTableView->tableData();
-        int rows = data->rowCount();
-        int cols = data->columnCount();
-
-        // 格式化显示行列数
-        QString text = QString("%1 行 × %2 列").arg(rows).arg(cols);
-        m_dataInfoLabel->setText(text);
-
-        // 根据数据量设置不同颜色提示
-        if (rows > 100000) {
-            m_dataInfoLabel->setStyleSheet("QLabel { color: red; }");
-        } else if (rows > 10000) {
-            m_dataInfoLabel->setStyleSheet("QLabel { color: orange; }");
-        } else {
-            m_dataInfoLabel->setStyleSheet("");
-        }
-    } else {
-        m_dataInfoLabel->setText("0 行 × 0 列");
-        m_dataInfoLabel->setStyleSheet("");
-    }
-}
-*/
 
 void MainWindow::updateDataInfoLabel()
 {
