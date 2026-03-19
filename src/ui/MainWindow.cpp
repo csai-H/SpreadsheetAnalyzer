@@ -400,7 +400,7 @@ bool MainWindow::onSaveAsFile()
     return false;
 }
 
-bool MainWindow::saveAsExcel(const QString &filePath)
+bool MainWindow::saveAsExcel(const QString &filePath, bool visibleOnly)
 {
     QString path = filePath.isEmpty() ? m_currentFilePath : filePath;
 
@@ -413,7 +413,7 @@ bool MainWindow::saveAsExcel(const QString &filePath)
         path += ".xlsx";
     }
 
-    const auto tableData = m_dataTableView->snapshotData(true);
+    const auto tableData = m_dataTableView->snapshotData(visibleOnly);
     if (!tableData || tableData->isEmpty()) {
         QMessageBox::warning(this, "错误", "没有数据可以导出");
         return false;
@@ -439,7 +439,29 @@ void MainWindow::onExportAsExcel()
     );
 
     if (!fileName.isEmpty()) {
-        saveAsExcel(fileName);
+        bool visibleOnly = false;
+        if (m_dataTableView && m_dataTableView->hasActiveFilter()
+            && m_dataTableView->visibleRowCount() != m_dataTableView->totalRowCount()) {
+            QMessageBox choiceBox(this);
+            choiceBox.setWindowTitle("导出范围");
+            choiceBox.setText("当前表格存在筛选结果，要导出哪部分数据？");
+            auto *currentViewButton = choiceBox.addButton("导出当前视图", QMessageBox::AcceptRole);
+            auto *allDataButton = choiceBox.addButton("导出全部数据", QMessageBox::ActionRole);
+            auto *cancelButton = choiceBox.addButton("取消", QMessageBox::RejectRole);
+            choiceBox.exec();
+
+            if (choiceBox.clickedButton() == cancelButton || choiceBox.clickedButton() == nullptr) {
+                return;
+            }
+
+            visibleOnly = (choiceBox.clickedButton() == currentViewButton);
+            if (choiceBox.clickedButton() != currentViewButton
+                && choiceBox.clickedButton() != allDataButton) {
+                return;
+            }
+        }
+
+        saveAsExcel(fileName, visibleOnly);
     }
 }
 

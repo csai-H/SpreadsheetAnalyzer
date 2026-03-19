@@ -67,7 +67,7 @@ public:
 
     bool openFile(const QString &filePath);
     bool saveFile(const QString &filePath = QString());
-    bool saveAsExcel(const QString &filePath = QString());
+    bool saveAsExcel(const QString &filePath = QString(), bool visibleOnly = false);
     bool closeFile();
 
     bool hasUnsavedChanges() const;
