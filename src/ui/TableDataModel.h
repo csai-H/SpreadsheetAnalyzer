@@ -3,8 +3,11 @@
 
 #include <QAbstractTableModel>
 #include <QSharedPointer>
+#include <QStringList>
 
 #include "core/TableData.h"
+
+class QUndoStack;
 
 class TableDataModel : public QAbstractTableModel
 {
@@ -25,15 +28,33 @@ public:
     bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
     bool insertColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override;
     bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override;
+    bool removeColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override;
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
 
     void setTableData(const QSharedPointer<Core::TableData> &data);
     QSharedPointer<Core::TableData> tableData() const;
+    void setUndoStack(QUndoStack *undoStack);
+    QUndoStack *undoStack() const;
+
+    QVariant cellValue(int row, int column) const;
+    QString headerValue(int section) const;
+    QVector<QVector<QVariant>> rowsSnapshot(int row, int count) const;
+
+    bool setCellValueDirect(int row, int column, const QVariant &value);
+    bool setHeaderValueDirect(int section, const QString &value);
+    bool insertRowsDirect(int row, int count);
+    bool insertColumnsDirect(int column, int count);
+    bool removeRowsDirect(int row, int count);
+    bool removeColumnsDirect(int column, int count);
+    bool restoreRowsDirect(int row, const QVector<QVector<QVariant>> &rows);
+    bool restoreColumnsDirect(int column, const QStringList &headers,
+                              const QVector<QVector<QVariant>> &columnValues);
 
 private:
     void ensureData();
 
     QSharedPointer<Core::TableData> m_tableData;
+    QUndoStack *m_undoStack = nullptr;
 };
 
 #endif // TABLEDATAMODEL_H

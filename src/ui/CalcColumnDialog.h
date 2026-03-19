@@ -1,19 +1,16 @@
 #ifndef CALCCOLUMNDIALOG_H
 #define CALCCOLUMNDIALOG_H
 
-#include <QDialog>
-#include <QTableView>
 #include <QComboBox>
+#include <QDialog>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QString>
+#include <QTableView>
+#include <QVariant>
 #include <QVector>
 
-/**
- * @brief 计算列对话框
- *
- * 用于基于现有列计算新列
- */
 class CalcColumnDialog : public QDialog
 {
     Q_OBJECT
@@ -29,14 +26,36 @@ private slots:
     void onOperationChanged(int index);
 
 private:
+    enum CalculationType {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Percentage,
+        Difference,
+        GrowthRate
+    };
+
+    struct CalculationSpec {
+        QString columnName;
+        CalculationType type = Add;
+        QVector<int> sourceColumns;
+    };
+
     void setupUI();
     void updateAvailableColumns();
-    void performCalculation();
+    QString operationName(CalculationType type) const;
+    QString buildCalculationDescription(const CalculationSpec& spec) const;
+    int requiredColumnCount(CalculationType type) const;
+    bool calculateValues(const CalculationSpec& spec,
+                         QVector<QVariant>* values,
+                         QString* errorMessage) const;
+    bool parseNumber(const QVariant& value, double* number, bool* isEmpty) const;
 
     QTableView* m_tableView;
     QVector<QString> m_availableColumns;
+    QVector<CalculationSpec> m_pendingCalculations;
 
-    // 界面组件
     QListWidget* m_sourceColumnsList;
     QListWidget* m_calculatedColumnsList;
     QComboBox* m_operationCombo;
@@ -44,16 +63,6 @@ private:
     QPushButton* m_addButton;
     QPushButton* m_removeButton;
     QPushButton* m_applyButton;
-
-    // 计算类型
-    enum CalculationType {
-        Add,            // 加法
-        Subtract,       // 减法
-        Multiply,       // 乘法
-        Percentage,     // 百分比
-        Difference,      // 差分
-        GrowthRate      // 增长率
-    };
 };
 
 #endif // CALCCOLUMNDIALOG_H

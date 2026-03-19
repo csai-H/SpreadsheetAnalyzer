@@ -31,7 +31,6 @@
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_undoStack(new QUndoStack(this))
     , m_currentDocumentIndex(-1)
     , m_statisticsDialog(nullptr)
 {
@@ -101,8 +100,8 @@ void MainWindow::createMenuBar()
 
     // 编辑菜单
     m_editMenu = menuBar()->addMenu("编辑(&E)");
-    m_editMenu->addAction("撤销(&U)", QKeySequence::Undo, m_undoStack, &QUndoStack::undo);
-    m_editMenu->addAction("重做(&R)", QKeySequence::Redo, m_undoStack, &QUndoStack::redo);
+    m_editMenu->addAction("撤销(&U)", QKeySequence::Undo, this, &MainWindow::onUndo);
+    m_editMenu->addAction("重做(&R)", QKeySequence::Redo, this, &MainWindow::onRedo);
     m_editMenu->addSeparator();
     m_editMenu->addAction("复制(&C)", QKeySequence::Copy, this, &MainWindow::onCopy);
     m_editMenu->addAction("粘贴(&P)", QKeySequence::Paste, this, &MainWindow::onPaste);
@@ -158,8 +157,8 @@ void MainWindow::createToolBar()
 
     // 编辑工具栏
     m_editToolBar = addToolBar("编辑");
-    m_editToolBar->addAction("撤销", m_undoStack, &QUndoStack::undo);
-    m_editToolBar->addAction("重做", m_undoStack, &QUndoStack::redo);
+    m_editToolBar->addAction("撤销", this, &MainWindow::onUndo);
+    m_editToolBar->addAction("重做", this, &MainWindow::onRedo);
 }
 
 void MainWindow::createStatusBar()
@@ -303,10 +302,30 @@ bool MainWindow::openFile(const QString &filePath)
         doc->filePath = normalizedPath;
         doc->fileName = QFileInfo(normalizedPath).fileName();
         doc->model = m_dataTableView->tableModel();
+        doc->undoStack = QSharedPointer<QUndoStack>::create();
         doc->unsavedChanges = false;
         doc->currentChartColumn = m_chartTypeWidget ? m_chartTypeWidget->currentRow() : -1;
 
         // 添加新文档
+        m_documents.append(doc);
+        m_undoStack = doc->undoStack.data();
+        m_dataTableView->setUndoStack(m_undoStack);
+        if (m_undoStack) {
+            m_undoStack->clear();
+            m_undoStack->setClean();
+        }
+
+        for (int i = m_documents.size() - 1; i >= 0; --i) {
+#ifdef Q_OS_WIN
+            const bool sameFile = m_documents[i]->filePath.compare(normalizedPath, Qt::CaseInsensitive) == 0;
+#else
+            const bool sameFile = m_documents[i]->filePath == normalizedPath;
+#endif
+            if (sameFile) {
+                m_documents.removeAt(i);
+            }
+        }
+
         m_documents.append(doc);
         m_currentDocumentIndex = m_documents.size() - 1;
 
@@ -352,6 +371,9 @@ bool MainWindow::saveFile(const QString &filePath)
             doc->filePath = normalizedPath;
             doc->fileName = QFileInfo(normalizedPath).fileName();
             doc->model = m_dataTableView->tableModel();
+            if (doc->undoStack) {
+                doc->undoStack->setClean();
+            }
         }
         addRecentFile(normalizedPath);
         m_fileInfoLabel->setText(QFileInfo(normalizedPath).fileName());
@@ -494,12 +516,24 @@ void MainWindow::onExit()
 
 void MainWindow::onUndo()
 {
+    if (!m_undoStack) {
+        return;
+    }
+
     m_undoStack->undo();
+    setUnsavedChanges(!m_undoStack->isClean());
+    syncCurrentDocumentState();
 }
 
 void MainWindow::onRedo()
 {
+    if (!m_undoStack) {
+        return;
+    }
+
     m_undoStack->redo();
+    setUnsavedChanges(!m_undoStack->isClean());
+    syncCurrentDocumentState();
 }
 
 void MainWindow::onCopy()
@@ -781,7 +815,15 @@ void MainWindow::onDataChanged()
 {
     setUnsavedChanges(true);
     syncCurrentDocumentState();
-    refreshCurrentChart();
+    const auto tableData = m_dataTableView->snapshotData(false);
+    const int expectedChartColumns = (tableData && tableData->columnCount() > 1)
+                                         ? tableData->columnCount() - 1
+                                         : 0;
+    if (m_chartTypeWidget && m_chartTypeWidget->count() != expectedChartColumns) {
+        refreshChartColumnList();
+    } else {
+        refreshCurrentChart();
+    }
     updateDataInfoLabel();  // 更新行列数（以防数据结构变化）
 }
 
@@ -801,35 +843,7 @@ void MainWindow::onSelectionChanged()
 void MainWindow::onFileLoaded(const QString &filePath)
 {
     Q_UNUSED(filePath);
-
-    if (!m_chartTypeWidget) {
-        return;
-    }
-
-    const auto tableData = m_dataTableView->snapshotData(false);
-    QSignalBlocker blocker(m_chartTypeWidget);
-    m_chartTypeWidget->clear();
-
-    if (!tableData || tableData->isEmpty() || tableData->columnCount() <= 1) {
-        m_chartDataSnapshot.clear();
-        m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
-        return;
-    }
-
-    for (int col = 1; col < tableData->columnCount(); ++col) {
-        m_chartTypeWidget->addItem(tableData->header(col));
-    }
-
-    int selectedRow = 0;
-    if (auto *doc = currentDocument()) {
-        selectedRow = doc->currentChartColumn;
-    }
-
-    selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
-    m_chartTypeWidget->setCurrentRow(selectedRow);
-    blocker.unblock();
-    refreshCurrentChart();
-    return;
+    refreshChartColumnList();
 }
 
 void MainWindow::onChartColumnChanged(int row)
@@ -1100,7 +1114,12 @@ int MainWindow::findDocument(const QString &filePath)
     const QString normalizedPath = canonicalPath.isEmpty() ? fileInfo.absoluteFilePath() : canonicalPath;
 
     for (int i = 0; i < m_documents.size(); ++i) {
-        if (m_documents[i]->filePath == normalizedPath) {
+ #ifdef Q_OS_WIN
+        const bool sameFile = m_documents[i]->filePath.compare(normalizedPath, Qt::CaseInsensitive) == 0;
+ #else
+        const bool sameFile = m_documents[i]->filePath == normalizedPath;
+ #endif
+        if (sameFile) {
             return i;
         }
     }
@@ -1124,6 +1143,12 @@ bool MainWindow::switchToDocument(int index)
         return false;
     }
 
+    if (!newDoc->undoStack) {
+        newDoc->undoStack = QSharedPointer<QUndoStack>::create();
+    }
+    m_undoStack = newDoc->undoStack.data();
+    m_dataTableView->setUndoStack(m_undoStack);
+
     if (newDoc->model) {
         m_dataTableView->setTableModel(newDoc->model);
     } else if (!newDoc->filePath.isEmpty() && m_dataTableView->loadFile(newDoc->filePath)) {
@@ -1145,32 +1170,14 @@ bool MainWindow::switchToDocument(int index)
     m_dataTableView->autoResizeColumns();
 
     m_currentFilePath = newDoc->filePath;
-    m_unsavedChanges = newDoc->unsavedChanges;
+    m_unsavedChanges = m_undoStack ? !m_undoStack->isClean() : newDoc->unsavedChanges;
     updateWindowTitle();
     m_fileInfoLabel->setText(newDoc->fileName);
 
-    if (m_chartTypeWidget) {
-        const auto tableData = m_dataTableView->snapshotData(false);
-        QSignalBlocker blocker(m_chartTypeWidget);
-        m_chartTypeWidget->clear();
-
-        if (tableData && tableData->columnCount() > 1) {
-            for (int col = 1; col < tableData->columnCount(); ++col) {
-                m_chartTypeWidget->addItem(tableData->header(col));
-            }
-
-            int selectedRow = newDoc->currentChartColumn;
-            selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
-            m_chartTypeWidget->setCurrentRow(selectedRow);
-        } else {
-            m_chartDataSnapshot.clear();
-            m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
-        }
-    }
+    refreshChartColumnList();
 
     updateDocumentList();
     updateDataInfoLabel();
-    refreshCurrentChart();
     m_statusLabel->setText(QString("Active document: %1").arg(newDoc->fileName));
     return true;
 }
@@ -1214,8 +1221,10 @@ void MainWindow::closeDocument(int index)
     if (index == m_currentDocumentIndex) {
         if (m_documents.isEmpty()) {
             m_currentDocumentIndex = -1;
+            m_undoStack = nullptr;
             m_currentFilePath.clear();
             m_unsavedChanges = false;
+            m_dataTableView->setUndoStack(nullptr);
             m_dataTableView->clearData();
             m_chartDataSnapshot.clear();
             m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
@@ -1279,6 +1288,43 @@ void MainWindow::syncCurrentDocumentState()
         doc->filePath = canonicalPath.isEmpty() ? fileInfo.absoluteFilePath() : canonicalPath;
         doc->fileName = QFileInfo(doc->filePath).fileName();
     }
+}
+
+void MainWindow::refreshChartColumnList()
+{
+    if (!m_chartTypeWidget) {
+        return;
+    }
+
+    const auto tableData = m_dataTableView->snapshotData(false);
+    QSignalBlocker blocker(m_chartTypeWidget);
+    m_chartTypeWidget->clear();
+
+    if (!tableData || tableData->isEmpty() || tableData->columnCount() <= 1) {
+        m_chartDataSnapshot.clear();
+        if (m_chartView) {
+            m_chartView->setTableData(QSharedPointer<Core::TableData>(), -1);
+        }
+        return;
+    }
+
+    for (int col = 1; col < tableData->columnCount(); ++col) {
+        m_chartTypeWidget->addItem(tableData->header(col));
+    }
+
+    int selectedRow = m_chartTypeWidget->currentRow();
+    if (auto *doc = currentDocument()) {
+        selectedRow = doc->currentChartColumn;
+    }
+
+    selectedRow = qBound(0, selectedRow, m_chartTypeWidget->count() - 1);
+    m_chartTypeWidget->setCurrentRow(selectedRow);
+    if (auto *doc = currentDocument()) {
+        doc->currentChartColumn = selectedRow;
+    }
+
+    blocker.unblock();
+    refreshCurrentChart();
 }
 
 void MainWindow::refreshCurrentChart()

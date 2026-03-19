@@ -1,19 +1,24 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QLabel>
+#include <QList>
+#include <QListWidget>
 #include <QMainWindow>
-#include <QTabWidget>
+#include <QMenuBar>
+#include <QProgressBar>
+#include <QSharedPointer>
 #include <QSplitter>
 #include <QStatusBar>
-#include <QMenuBar>
+#include <QString>
+#include <QTabWidget>
 #include <QToolBar>
-#include <QLabel>
-#include <QProgressBar>
 #include <QUndoStack>
-#include <QListWidget>
-#include <QList>
-#include <QSharedPointer>
 
+class QCloseEvent;
+class QDragEnterEvent;
+class QDropEvent;
+class QMenu;
 class DataTableView;
 class ChartView;
 class StatisticsDialog;
@@ -23,24 +28,22 @@ class CalcColumnDialog;
 class TableDataModel;
 
 namespace Core {
-    class TableData;
+class TableData;
 }
 
-/**
- * @brief 文档信息结构
- */
 struct DocumentInfo {
-    QString filePath;                    // 文件路径
-    QString fileName;                    // 文件名
-    QSharedPointer<TableDataModel> model; // 文档模型
-    bool unsavedChanges;                 // 未保存的更改
-    int currentChartColumn;              // 当前图表数据列
-    bool hasActiveFilter;                // 是否有筛选
-    int filterColumn;                    // 筛选列
-    int filterCondition;                 // 筛选条件
-    QString filterValue;                 // 筛选值
-    int sortColumn;                      // 排序列
-    Qt::SortOrder sortOrder;             // 排序方向
+    QString filePath;
+    QString fileName;
+    QSharedPointer<TableDataModel> model;
+    QSharedPointer<QUndoStack> undoStack;
+    bool unsavedChanges;
+    int currentChartColumn;
+    bool hasActiveFilter;
+    int filterColumn;
+    int filterCondition;
+    QString filterValue;
+    int sortColumn;
+    Qt::SortOrder sortOrder;
 
     DocumentInfo()
         : unsavedChanges(false)
@@ -54,11 +57,6 @@ struct DocumentInfo {
     }
 };
 
-/**
- * @brief 主窗口
- *
- * 整合所有功能组件，提供统一操作界面
- */
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -67,13 +65,11 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    // 文件操作
     bool openFile(const QString &filePath);
     bool saveFile(const QString &filePath = QString());
     bool saveAsExcel(const QString &filePath = QString());
     bool closeFile();
 
-    // 状态管理
     bool hasUnsavedChanges() const;
     void setUnsavedChanges(bool unsaved);
 
@@ -83,7 +79,6 @@ protected:
     void dropEvent(QDropEvent *event) override;
 
 private slots:
-    // 文件菜单
     void onOpenFile();
     void onSaveFile();
     bool onSaveAsFile();
@@ -91,16 +86,13 @@ private slots:
     void onCloseFile();
     void onExit();
 
-    // 最近文件
     void onOpenRecentFile();
     void onClearRecentFiles();
 
-    // 文档列表管理
     void onDocumentListItemChanged(int currentRow);
     void onDocumentListCloseRequested();
     void onCloseCurrentDocument();
 
-    // 编辑菜单
     void onUndo();
     void onRedo();
     void onCopy();
@@ -110,24 +102,19 @@ private slots:
     void onGoToCell();
     void onSelectAll();
 
-    // 数据菜单
     void onFilterData();
     void onCalcColumn();
 
-    // 视图菜单
     void onToggleSidebar();
     void onZoomIn();
     void onZoomOut();
     void onResetZoom();
 
-    // 帮助菜单
     void onAbout();
 
-    // 工具菜单
     void onStatistics();
     void onSettings();
 
-    // 界面更新
     void updateWindowTitle();
     void onDataChanged();
     void onViewChanged();
@@ -145,83 +132,68 @@ private:
     void createTabWidget();
     void connectSignals();
 
-    // 最近文件管理
     void updateRecentFilesMenu();
     void addRecentFile(const QString &filePath);
     void loadRecentFiles();
     void saveRecentFiles();
     void clearRecentFiles();
 
-    // 文档管理
     void updateDocumentList();
     int findDocument(const QString &filePath);
     bool switchToDocument(int index);
     void closeDocument(int index);
     void closeAllDocuments();
-    DocumentInfo* currentDocument();
+    DocumentInfo *currentDocument();
     void syncCurrentDocumentState();
+    void refreshChartColumnList();
     void refreshCurrentChart();
+    void updateDataInfoLabel();
+    void applyZoom();
 
-    // 状态栏更新
-    void updateDataInfoLabel();  // 更新行列数显示
+    QTabWidget *m_tabWidget = nullptr;
+    DataTableView *m_dataTableView = nullptr;
+    ChartView *m_chartView = nullptr;
 
-    // 组件
-    QTabWidget *m_tabWidget;
-    DataTableView *m_dataTableView;
-    ChartView *m_chartView;
+    QSplitter *m_mainSplitter = nullptr;
+    QWidget *m_sidebarWidget = nullptr;
 
-    QSplitter *m_mainSplitter;
-    QWidget *m_sidebarWidget;
+    QMenu *m_fileMenu = nullptr;
+    QMenu *m_editMenu = nullptr;
+    QMenu *m_viewMenu = nullptr;
+    QMenu *m_helpMenu = nullptr;
+    QMenu *m_recentFilesMenu = nullptr;
 
-    // 菜单
-    QMenu *m_fileMenu;
-    QMenu *m_editMenu;
-    QMenu *m_viewMenu;
-    QMenu *m_helpMenu;
-    QMenu *m_recentFilesMenu;  // 最近文件子菜单
+    QToolBar *m_fileToolBar = nullptr;
+    QToolBar *m_editToolBar = nullptr;
 
-    // 工具栏
-    QToolBar *m_fileToolBar;
-    QToolBar *m_editToolBar;
+    QLabel *m_statusLabel = nullptr;
+    QLabel *m_fileInfoLabel = nullptr;
+    QLabel *m_selectionInfoLabel = nullptr;
+    QLabel *m_dataInfoLabel = nullptr;
+    QProgressBar *m_progressBar = nullptr;
 
-    // 状态栏
-    QLabel *m_statusLabel;
-    QLabel *m_fileInfoLabel;
-    QLabel *m_selectionInfoLabel;
-    QLabel *m_dataInfoLabel;  // 显示行列数
-    QProgressBar *m_progressBar;
+    QListWidget *m_fileListWidget = nullptr;
+    QListWidget *m_chartTypeWidget = nullptr;
 
-    // 侧边栏
-    QListWidget *m_fileListWidget;
-    QListWidget *m_chartTypeWidget;  // 图表数据列选择列表（原图表类型）
-
-    // 状态
-    QUndoStack *m_undoStack;
+    QUndoStack *m_undoStack = nullptr;
     QString m_currentFilePath;
     QString m_lastSearchText;
     bool m_unsavedChanges = false;
 
-    // 最近文件列表（最多保存10个）
     QList<QString> m_recentFiles;
     static const int MAX_RECENT_FILES = 10;
 
-    // 文档列表
     QList<QSharedPointer<DocumentInfo>> m_documents;
     int m_currentDocumentIndex;
     QSharedPointer<Core::TableData> m_chartDataSnapshot;
 
-    // 缩放状态
-    double m_zoomLevel = 1.0;  // 当前缩放级别，1.0 = 100%
-    double m_baseFontSize = 10.0;  // 基础字体大小
-    static constexpr double MIN_ZOOM = 0.6;   // 最小缩放（60%）
-    static constexpr double MAX_ZOOM = 2.0;   // 最大缩放（200%）
-    static constexpr double ZOOM_STEP = 0.1;  // 缩放步长（10%）
+    double m_zoomLevel = 1.0;
+    double m_baseFontSize = 10.0;
+    static constexpr double MIN_ZOOM = 0.6;
+    static constexpr double MAX_ZOOM = 2.0;
+    static constexpr double ZOOM_STEP = 0.1;
 
-    // 对话框
-    StatisticsDialog *m_statisticsDialog;
-
-private:
-    void applyZoom();  // 应用缩放到所有视图
+    StatisticsDialog *m_statisticsDialog = nullptr;
 };
 
 #endif // MAINWINDOW_H

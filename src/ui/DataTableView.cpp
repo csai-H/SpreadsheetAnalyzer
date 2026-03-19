@@ -16,6 +16,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QTextStream>
+#include <QUndoStack>
 
 QWidget *TableItemDelegate::createEditor(QWidget *parent,
                                          const QStyleOptionViewItem &option,
@@ -183,9 +184,20 @@ void DataTableView::setTableModel(const QSharedPointer<TableDataModel> &model)
 
     m_tableModel = model ? model : QSharedPointer<TableDataModel>::create();
     m_sourceModel = m_tableModel.data();
+    if (m_sourceModel) {
+        m_sourceModel->setUndoStack(m_undoStack);
+    }
     m_proxyModel->setSourceModel(m_sourceModel);
     connectSourceModelSignals();
     invalidateSnapshots();
+}
+
+void DataTableView::setUndoStack(QUndoStack *undoStack)
+{
+    m_undoStack = undoStack;
+    if (m_sourceModel) {
+        m_sourceModel->setUndoStack(m_undoStack);
+    }
 }
 
 bool DataTableView::hasData() const
@@ -539,6 +551,10 @@ bool DataTableView::pasteFromClipboard(QString *errorMessage)
 
     const int requiredRows = startRow + rows.size();
     const int requiredColumns = startColumn + maxColumns;
+    const bool useUndoMacro = m_undoStack != nullptr;
+    if (useUndoMacro) {
+        m_undoStack->beginMacro(tr("粘贴数据"));
+    }
 
     if (requiredRows > m_sourceModel->rowCount()) {
         m_sourceModel->insertRows(m_sourceModel->rowCount(), requiredRows - m_sourceModel->rowCount());
@@ -562,6 +578,10 @@ bool DataTableView::pasteFromClipboard(QString *errorMessage)
         selectionModel()->select(QItemSelection(topLeft, bottomRight),
                                  QItemSelectionModel::ClearAndSelect);
         setCurrentIndex(topLeft);
+    }
+
+    if (useUndoMacro) {
+        m_undoStack->endMacro();
     }
 
     return true;
@@ -634,6 +654,57 @@ bool DataTableView::goToCell(int row, int column, QString *errorMessage)
     selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect);
     setCurrentIndex(proxyIndex);
     scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
+    return true;
+}
+
+bool DataTableView::appendColumn(const QString &header, const QVector<QVariant> &values, QString *errorMessage)
+{
+    if (!m_sourceModel) {
+        if (errorMessage) {
+            *errorMessage = tr("当前表格没有可编辑的数据模型");
+        }
+        return false;
+    }
+
+    const QString trimmedHeader = header.trimmed();
+    if (trimmedHeader.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = tr("新列名称不能为空");
+        }
+        return false;
+    }
+
+    if (m_sourceModel->rowCount() > 0 && values.size() != m_sourceModel->rowCount()) {
+        if (errorMessage) {
+            *errorMessage = tr("新列数据行数与当前表格不一致");
+        }
+        return false;
+    }
+
+    const int newColumn = m_sourceModel->columnCount();
+    const bool useUndoMacro = m_undoStack != nullptr;
+    if (useUndoMacro) {
+        m_undoStack->beginMacro(tr("新增列 %1").arg(trimmedHeader));
+    }
+    if (!m_sourceModel->insertColumns(newColumn, 1)) {
+        if (useUndoMacro) {
+            m_undoStack->endMacro();
+        }
+        if (errorMessage) {
+            *errorMessage = tr("无法插入新列");
+        }
+        return false;
+    }
+
+    m_sourceModel->setHeaderData(newColumn, Qt::Horizontal, trimmedHeader, Qt::EditRole);
+    for (int row = 0; row < values.size(); ++row) {
+        m_sourceModel->setData(m_sourceModel->index(row, newColumn), values[row], Qt::EditRole);
+    }
+
+    autoResizeColumns();
+    if (useUndoMacro) {
+        m_undoStack->endMacro();
+    }
     return true;
 }
 

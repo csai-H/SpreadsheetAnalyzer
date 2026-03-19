@@ -9,6 +9,7 @@
 #include "../core/TableData.h"
 
 class QAbstractItemModel;
+class QUndoStack;
 class TableDataModel;
 class TableFilterProxyModel;
 
@@ -44,6 +45,7 @@ public:
     void clearData();
     void setTableData(const QSharedPointer<Core::TableData> &data);
     void setTableModel(const QSharedPointer<TableDataModel> &model);
+    void setUndoStack(QUndoStack *undoStack);
 
     bool hasData() const;
     int totalRowCount() const;
@@ -85,6 +87,7 @@ public:
     bool pasteFromClipboard(QString *errorMessage = nullptr);
     bool findText(const QString &text, Qt::CaseSensitivity caseSensitivity = Qt::CaseInsensitive);
     bool goToCell(int row, int column, QString *errorMessage = nullptr);
+    bool appendColumn(const QString &header, const QVector<QVariant> &values, QString *errorMessage = nullptr);
 
 signals:
     void dataChanged();
@@ -107,6 +110,7 @@ private:
     QSharedPointer<TableDataModel> m_tableModel;
     TableDataModel *m_sourceModel;
     TableFilterProxyModel *m_proxyModel;
+    QUndoStack *m_undoStack = nullptr;
     QMenu *m_contextMenu;
 
     mutable QSharedPointer<Core::TableData> m_visibleSnapshotCache;
