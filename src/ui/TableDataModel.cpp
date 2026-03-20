@@ -5,8 +5,36 @@
 #include <QVector>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
+
+QVector<QVector<QVariant>> buildSortedRows(const QVector<QVector<QVariant>> &rows,
+                                           int column,
+                                           Qt::SortOrder order)
+{
+    QVector<QVector<QVariant>> sortedRows = rows;
+    const auto compare = [column, order](const QVector<QVariant> &left, const QVector<QVariant> &right) {
+        const QVariant &leftValue = left[column];
+        const QVariant &rightValue = right[column];
+
+        bool leftOk = false;
+        bool rightOk = false;
+        const double leftNumber = leftValue.toString().trimmed().toDouble(&leftOk);
+        const double rightNumber = rightValue.toString().trimmed().toDouble(&rightOk);
+
+        if (leftOk && rightOk) {
+            return order == Qt::AscendingOrder ? leftNumber < rightNumber : leftNumber > rightNumber;
+        }
+
+        const QString leftText = leftValue.toString();
+        const QString rightText = rightValue.toString();
+        return order == Qt::AscendingOrder ? leftText < rightText : leftText > rightText;
+    };
+
+    std::stable_sort(sortedRows.begin(), sortedRows.end(), compare);
+    return sortedRows;
+}
 
 class EditCellCommand final : public QUndoCommand
 {
@@ -190,6 +218,47 @@ private:
     QVector<QVector<QVariant>> m_columnValues;
 };
 
+class SortRowsCommand final : public QUndoCommand
+{
+public:
+    SortRowsCommand(TableDataModel *model,
+                    QVector<QVector<QVariant>> previousRows,
+                    QVector<QVector<QVariant>> sortedRows,
+                    int previousSortColumn,
+                    Qt::SortOrder previousSortOrder,
+                    int sortColumn,
+                    Qt::SortOrder sortOrder)
+        : m_model(model)
+        , m_previousRows(std::move(previousRows))
+        , m_sortedRows(std::move(sortedRows))
+        , m_previousSortColumn(previousSortColumn)
+        , m_previousSortOrder(previousSortOrder)
+        , m_sortColumn(sortColumn)
+        , m_sortOrder(sortOrder)
+    {
+        setText(QObject::tr("鎺掑簭"));
+    }
+
+    void undo() override
+    {
+        m_model->applyRowOrderDirect(m_previousRows, m_previousSortColumn, m_previousSortOrder);
+    }
+
+    void redo() override
+    {
+        m_model->applyRowOrderDirect(m_sortedRows, m_sortColumn, m_sortOrder);
+    }
+
+private:
+    TableDataModel *m_model;
+    QVector<QVector<QVariant>> m_previousRows;
+    QVector<QVector<QVariant>> m_sortedRows;
+    int m_previousSortColumn;
+    Qt::SortOrder m_previousSortOrder;
+    int m_sortColumn;
+    Qt::SortOrder m_sortOrder;
+};
+
 } // namespace
 
 TableDataModel::TableDataModel(QObject *parent)
@@ -358,43 +427,40 @@ void TableDataModel::sort(int column, Qt::SortOrder order)
         return;
     }
 
-    QVector<QVector<QVariant>> rows;
-    rows.reserve(m_tableData->rowCount());
+    QVector<QVector<QVariant>> previousRows;
+    previousRows.reserve(m_tableData->rowCount());
     for (int row = 0; row < m_tableData->rowCount(); ++row) {
-        rows.append(m_tableData->getRow(row));
+        previousRows.append(m_tableData->getRow(row));
     }
 
-    const auto compare = [column, order](const QVector<QVariant> &left, const QVector<QVariant> &right) {
-        const QVariant &leftValue = left[column];
-        const QVariant &rightValue = right[column];
-
-        bool leftOk = false;
-        bool rightOk = false;
-        const double leftNumber = leftValue.toString().trimmed().toDouble(&leftOk);
-        const double rightNumber = rightValue.toString().trimmed().toDouble(&rightOk);
-
-        if (leftOk && rightOk) {
-            return order == Qt::AscendingOrder ? leftNumber < rightNumber : leftNumber > rightNumber;
-        }
-
-        const QString leftText = leftValue.toString();
-        const QString rightText = rightValue.toString();
-        return order == Qt::AscendingOrder ? leftText < rightText : leftText > rightText;
-    };
-
-    emit layoutAboutToBeChanged();
-    std::stable_sort(rows.begin(), rows.end(), compare);
-    for (int row = 0; row < rows.size(); ++row) {
-        m_tableData->setRow(row, rows[row]);
+    const QVector<QVector<QVariant>> sortedRows = buildSortedRows(previousRows, column, order);
+    const bool sortStateChanged = (m_sortColumn != column || m_sortOrder != order);
+    if (previousRows == sortedRows && !sortStateChanged) {
+        return;
     }
-    emit layoutChanged();
+
+    if (m_undoStack) {
+        m_undoStack->push(new SortRowsCommand(this,
+                                             previousRows,
+                                             sortedRows,
+                                             m_sortColumn,
+                                             m_sortOrder,
+                                             column,
+                                             order));
+        return;
+    }
+
+    applyRowOrderDirect(sortedRows, column, order);
 }
 
 void TableDataModel::setTableData(const QSharedPointer<Core::TableData> &data)
 {
     beginResetModel();
     m_tableData = data ? data : QSharedPointer<Core::TableData>::create();
+    m_sortColumn = -1;
+    m_sortOrder = Qt::AscendingOrder;
     endResetModel();
+    emit sortStateChanged(m_sortColumn, m_sortOrder);
 }
 
 QSharedPointer<Core::TableData> TableDataModel::tableData() const
@@ -410,6 +476,25 @@ void TableDataModel::setUndoStack(QUndoStack *undoStack)
 QUndoStack *TableDataModel::undoStack() const
 {
     return m_undoStack;
+}
+
+int TableDataModel::currentSortColumn() const
+{
+    return m_sortColumn;
+}
+
+Qt::SortOrder TableDataModel::currentSortOrder() const
+{
+    return m_sortOrder;
+}
+
+void TableDataModel::setCurrentSortState(int column, Qt::SortOrder order)
+{
+    if (m_sortColumn == column && m_sortOrder == order) {
+        return;
+    }
+    m_sortColumn = column;
+    m_sortOrder = order;
 }
 
 QVariant TableDataModel::cellValue(int row, int column) const
@@ -671,6 +756,25 @@ bool TableDataModel::restoreColumnsDirect(int column,
                          index(rowCount() - 1, column + headers.size() - 1),
                          {Qt::DisplayRole, Qt::EditRole});
     }
+    return true;
+}
+
+bool TableDataModel::applyRowOrderDirect(const QVector<QVector<QVariant>> &rows,
+                                         int sortColumn,
+                                         Qt::SortOrder sortOrder)
+{
+    if (!m_tableData || rows.size() != m_tableData->rowCount()) {
+        return false;
+    }
+
+    emit layoutAboutToBeChanged();
+    for (int row = 0; row < rows.size(); ++row) {
+        m_tableData->setRow(row, rows.at(row));
+    }
+    m_sortColumn = sortColumn;
+    m_sortOrder = sortOrder;
+    emit layoutChanged();
+    emit sortStateChanged(m_sortColumn, m_sortOrder);
     return true;
 }
 

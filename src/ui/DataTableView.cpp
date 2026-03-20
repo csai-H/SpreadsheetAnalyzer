@@ -186,8 +186,14 @@ void DataTableView::setTableModel(const QSharedPointer<TableDataModel> &model)
     m_sourceModel = m_tableModel.data();
     if (m_sourceModel) {
         m_sourceModel->setUndoStack(m_undoStack);
+        m_sortColumn = m_sourceModel->currentSortColumn();
+        m_sortOrder = m_sourceModel->currentSortOrder();
+    } else {
+        m_sortColumn = -1;
+        m_sortOrder = Qt::AscendingOrder;
     }
     m_proxyModel->setSourceModel(m_sourceModel);
+    horizontalHeader()->setSortIndicator(m_sortColumn, m_sortOrder);
     connectSourceModelSignals();
     invalidateSnapshots();
 }
@@ -315,6 +321,9 @@ void DataTableView::setSortState(int column, Qt::SortOrder order)
 {
     m_sortColumn = column;
     m_sortOrder = order;
+    if (m_sourceModel) {
+        m_sourceModel->setCurrentSortState(column, order);
+    }
     horizontalHeader()->setSortIndicator(column, order);
 }
 
@@ -868,6 +877,12 @@ void DataTableView::connectSourceModelSignals()
                     emit viewChanged();
                 }
             });
+    connect(m_sourceModel, &TableDataModel::sortStateChanged,
+            this, [this](int column, Qt::SortOrder order) {
+                m_sortColumn = column;
+                m_sortOrder = order;
+                horizontalHeader()->setSortIndicator(column, order);
+            });
 }
 
 void DataTableView::sortColumn(int column, Qt::SortOrder order)
@@ -877,9 +892,7 @@ void DataTableView::sortColumn(int column, Qt::SortOrder order)
     }
 
     m_sourceModel->sort(column, order);
-    invalidateSnapshots();
     emit dataChanged();
-    emit viewChanged();
 }
 
 bool DataTableView::isNumericColumn(int column) const

@@ -35,6 +35,9 @@ public:
     QSharedPointer<Core::TableData> tableData() const;
     void setUndoStack(QUndoStack *undoStack);
     QUndoStack *undoStack() const;
+    int currentSortColumn() const;
+    Qt::SortOrder currentSortOrder() const;
+    void setCurrentSortState(int column, Qt::SortOrder order);
 
     QVariant cellValue(int row, int column) const;
     QString headerValue(int section) const;
@@ -49,12 +52,20 @@ public:
     bool restoreRowsDirect(int row, const QVector<QVector<QVariant>> &rows);
     bool restoreColumnsDirect(int column, const QStringList &headers,
                               const QVector<QVector<QVariant>> &columnValues);
+    bool applyRowOrderDirect(const QVector<QVector<QVariant>> &rows,
+                             int sortColumn,
+                             Qt::SortOrder sortOrder);
+
+signals:
+    void sortStateChanged(int column, Qt::SortOrder order);
 
 private:
     void ensureData();
 
     QSharedPointer<Core::TableData> m_tableData;
     QUndoStack *m_undoStack = nullptr;
+    int m_sortColumn = -1;
+    Qt::SortOrder m_sortOrder = Qt::AscendingOrder;
 };
 
 #endif // TABLEDATAMODEL_H
