@@ -6,6 +6,7 @@
 #include <QListWidget>
 #include <QMainWindow>
 #include <QMenuBar>
+#include <QDockWidget>
 #include <QProgressBar>
 #include <QSharedPointer>
 #include <QSplitter>
@@ -25,6 +26,7 @@ class StatisticsDialog;
 class SettingsDialog;
 class FilterDialog;
 class CalcColumnDialog;
+class AIAssistantPanel;
 class TableDataModel;
 
 namespace Core {
@@ -113,6 +115,7 @@ private slots:
     void onAbout();
 
     void onStatistics();
+    void onAiInsights();
     void onSettings();
 
     void updateWindowTitle();
@@ -130,6 +133,7 @@ private:
     void createStatusBar();
     void createSidebar();
     void createTabWidget();
+    void createAiDock();
     void connectSignals();
 
     void updateRecentFilesMenu();
@@ -147,6 +151,7 @@ private:
     void syncCurrentDocumentState();
     void refreshChartColumnList();
     void refreshCurrentChart();
+    void refreshAiAssistantContext();
     void updateDataInfoLabel();
     void applyZoom();
 
@@ -156,6 +161,8 @@ private:
 
     QSplitter *m_mainSplitter = nullptr;
     QWidget *m_sidebarWidget = nullptr;
+    QDockWidget *m_aiDockWidget = nullptr;
+    AIAssistantPanel *m_aiAssistantPanel = nullptr;
 
     QMenu *m_fileMenu = nullptr;
     QMenu *m_editMenu = nullptr;

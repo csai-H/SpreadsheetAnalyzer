@@ -13,12 +13,13 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt6
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Widgets Network)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS
     Core
     Gui
     Widgets
     Charts
+    Network
 )
 
 # 包含 FetchContent 模块
@@ -36,6 +37,8 @@ FetchContent_Declare(
 set(OPENXLSX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(OPENXLSX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(OPENXLSX_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
+set(FETCHCONTENT_UPDATES_DISCONNECTED_OPENXLSX ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(OpenXLSX)
 
@@ -62,9 +65,12 @@ set(SOURCES
     src/ui/ChartView.cpp
     src/ui/StatisticsDialog.cpp
     src/ui/SettingsDialog.cpp
+    src/ui/AIInsightDialog.cpp
+    src/ui/AIAssistantPanel.cpp
     src/ui/FilterDialog.cpp
     src/ui/CalcColumnDialog.cpp
     src/ui/GroupByDialog.cpp
+    src/ai/AIInsightService.cpp
     src/core/TableData.cpp
     src/core/DataLoader.cpp
     src/core/CsvLoader.cpp
@@ -88,9 +94,12 @@ set(HEADERS
     src/ui/ChartView.h
     src/ui/StatisticsDialog.h
     src/ui/SettingsDialog.h
+    src/ui/AIInsightDialog.h
+    src/ui/AIAssistantPanel.h
     src/ui/FilterDialog.h
     src/ui/CalcColumnDialog.h
     src/ui/GroupByDialog.h
+    src/ai/AIInsightService.h
     src/core/TableData.h
     src/core/DataLoader.h
     src/core/CsvLoader.h
@@ -119,6 +128,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::Charts
+    Qt${QT_VERSION_MAJOR}::Network
     OpenXLSX::OpenXLSX
 )
 
@@ -126,6 +136,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+# 在 Windows 上部署 Qt 运行时，避免依赖 IDE 注入的 PATH / 插件环境
+if(WIN32 AND DEFINED WINDEPLOYQT_EXECUTABLE AND EXISTS "${WINDEPLOYQT_EXECUTABLE}")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+            --no-translations
+            --dir "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            "$<TARGET_FILE:${PROJECT_NAME}>"
+        COMMENT "Deploying Qt runtime"
+    )
+endif()
 
 # 复制资源文件到构建目录
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

@@ -6,6 +6,7 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
 
@@ -38,6 +39,7 @@ private:
     void setupViewTab();
     void setupChartTab();
     void setupAppearanceTab();
+    void setupAiTab();
     void loadSettings();
     void saveSettings();
     void loadAvailableThemes();
@@ -65,6 +67,12 @@ private:
     QCheckBox *m_checkAnimation;
     QSpinBox *m_spinAnimationDuration;
     QComboBox *m_comboDefaultChartType;
+
+    // AI 设置
+    QLineEdit *m_editAiApiKey;
+    QLineEdit *m_editAiEndpoint;
+    QComboBox *m_comboAiModel;
+    QLabel *m_lblAiHint;
 
     // 主题信息
     QList<ThemeInfo> m_availableThemes;

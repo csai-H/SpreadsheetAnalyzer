@@ -1,4 +1,5 @@
 #include "SettingsDialog.h"
+#include "../ai/AIInsightService.h"
 #include "../utils/ThemeManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -21,6 +22,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     setupViewTab();
     setupAppearanceTab();
     setupChartTab();
+    setupAiTab();
 
     // 按钮框
     auto *buttonBox = new QDialogButtonBox(
@@ -213,6 +215,47 @@ void SettingsDialog::setupChartTab()
     m_tabWidget->addTab(tab, "图表");
 }
 
+void SettingsDialog::setupAiTab()
+{
+    auto *tab = new QWidget();
+    auto *layout = new QVBoxLayout(tab);
+
+    auto *aiGroup = new QGroupBox("智谱 GLM");
+    auto *aiLayout = new QFormLayout();
+
+    m_editAiApiKey = new QLineEdit();
+    m_editAiApiKey->setEchoMode(QLineEdit::PasswordEchoOnEdit);
+    m_editAiApiKey->setPlaceholderText("填写智谱 API Key，或留空改为读取环境变量");
+
+    m_comboAiModel = new QComboBox();
+    m_comboAiModel->setEditable(true);
+    m_comboAiModel->addItems({
+        "glm-4.7-flash",
+        "glm-4.7",
+        "glm-4.6",
+        "glm-4.5-flash"
+    });
+
+    m_editAiEndpoint = new QLineEdit();
+    m_editAiEndpoint->setPlaceholderText("默认使用智谱官方 chat/completions 地址");
+
+    aiLayout->addRow("API Key:", m_editAiApiKey);
+    aiLayout->addRow("模型名:", m_comboAiModel);
+    aiLayout->addRow("接口地址:", m_editAiEndpoint);
+    aiGroup->setLayout(aiLayout);
+    layout->addWidget(aiGroup);
+
+    m_lblAiHint = new QLabel(
+        "说明：如果 API Key 留空，程序会尝试读取环境变量 "
+        "`ZHIPUAI_API_KEY`、`ZHIPU_API_KEY` 或 `GLM_API_KEY`。"
+    );
+    m_lblAiHint->setWordWrap(true);
+    layout->addWidget(m_lblAiHint);
+    layout->addStretch();
+
+    m_tabWidget->addTab(tab, "AI");
+}
+
 void SettingsDialog::onThemeChanged(int index)
 {
     if (index < 0 || index >= m_availableThemes.size()) {
@@ -288,6 +331,9 @@ void SettingsDialog::onResetToDefaults()
     m_checkAnimation->setChecked(true);
     m_spinAnimationDuration->setValue(500);
     m_comboDefaultChartType->setCurrentIndex(0);
+    m_editAiApiKey->clear();
+    m_comboAiModel->setCurrentText(AIInsightService::defaultModel());
+    m_editAiEndpoint->setText(AIInsightService::defaultEndpoint());
 
     // 重置主题为默认
     for (int i = 0; i < m_availableThemes.size(); ++i) {
@@ -322,6 +368,12 @@ void SettingsDialog::loadSettings()
     m_spinAnimationDuration->setValue(settings.value("animationDuration", 500).toInt());
     m_comboDefaultChartType->setCurrentIndex(settings.value("defaultChartType", 0).toInt());
     settings.endGroup();
+
+    settings.beginGroup("AI");
+    m_editAiApiKey->setText(settings.value("apiKey").toString());
+    m_comboAiModel->setCurrentText(settings.value("model", AIInsightService::defaultModel()).toString());
+    m_editAiEndpoint->setText(settings.value("endpoint", AIInsightService::defaultEndpoint()).toString());
+    settings.endGroup();
 }
 
 void SettingsDialog::saveSettings()
@@ -346,6 +398,21 @@ void SettingsDialog::saveSettings()
     settings.setValue("animation", m_checkAnimation->isChecked());
     settings.setValue("animationDuration", m_spinAnimationDuration->value());
     settings.setValue("defaultChartType", m_comboDefaultChartType->currentIndex());
+    settings.endGroup();
+
+    settings.beginGroup("AI");
+    const QString apiKey = m_editAiApiKey->text().trimmed();
+    if (apiKey.isEmpty()) {
+        settings.remove("apiKey");
+    } else {
+        settings.setValue("apiKey", apiKey);
+    }
+    settings.setValue("model", m_comboAiModel->currentText().trimmed().isEmpty()
+                                   ? AIInsightService::defaultModel()
+                                   : m_comboAiModel->currentText().trimmed());
+    settings.setValue("endpoint", m_editAiEndpoint->text().trimmed().isEmpty()
+                                      ? AIInsightService::defaultEndpoint()
+                                      : m_editAiEndpoint->text().trimmed());
     settings.endGroup();
 
     // 保存主题设置

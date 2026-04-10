@@ -4,8 +4,10 @@
 #include "ChartView.h"
 #include "StatisticsDialog.h"
 #include "SettingsDialog.h"
+#include "AIAssistantPanel.h"
 #include "FilterDialog.h"
 #include "CalcColumnDialog.h"
+#include "../ai/AIInsightService.h"
 #include "../core/ExcelExporter.h"
 #include "../core/TableData.h"
 #include <QApplication>
@@ -23,6 +25,7 @@
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QAction>
+#include <QDockWidget>
 #include <QMenu>
 #include <QCursor>
 #include <QPushButton>
@@ -92,6 +95,7 @@ MainWindow::MainWindow(QWidget *parent)
     resize(1280, 800);
 
     setupUI();
+    createAiDock();
     createMenuBar();
     createToolBar();
     createStatusBar();
@@ -179,6 +183,11 @@ void MainWindow::createMenuBar()
     // 视图菜单
     m_viewMenu = menuBar()->addMenu("视图(&V)");
     m_viewMenu->addAction("侧边栏(&B)", this, &MainWindow::onToggleSidebar);
+    if (m_aiDockWidget) {
+        QAction *aiDockAction = m_aiDockWidget->toggleViewAction();
+        aiDockAction->setText("AI 侧栏(&A)");
+        m_viewMenu->addAction(aiDockAction);
+    }
     m_viewMenu->addSeparator();
 
     // 缩放动作 - 支持多种快捷键
@@ -194,6 +203,7 @@ void MainWindow::createMenuBar()
     // 工具菜单
     auto *toolsMenu = menuBar()->addMenu("工具(&T)");
     toolsMenu->addAction("统计分析(&S)...", this, &MainWindow::onStatistics);
+    toolsMenu->addAction("AI 助手侧栏(&I)...", this, &MainWindow::onAiInsights);
     toolsMenu->addSeparator();
     toolsMenu->addAction("设置(&P)...", this, &MainWindow::onSettings);
 
@@ -304,6 +314,25 @@ void MainWindow::createTabWidget()
     m_mainSplitter->setStretchFactor(1, 1);
 }
 
+void MainWindow::createAiDock()
+{
+    m_aiDockWidget = new QDockWidget("AI 助手", this);
+    m_aiDockWidget->setObjectName("AIAssistantDock");
+    m_aiDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    m_aiDockWidget->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable);
+    m_aiDockWidget->setMinimumWidth(300);
+    m_aiDockWidget->setMaximumWidth(360);
+    m_aiDockWidget->setTitleBarWidget(new QWidget(m_aiDockWidget));
+    m_aiDockWidget->setStyleSheet("QDockWidget#AIAssistantDock { border-left: 1px solid #ebe6df; background: #f6f4f1; }");
+
+    m_aiAssistantPanel = new AIAssistantPanel(m_aiDockWidget);
+    m_aiDockWidget->setWidget(m_aiAssistantPanel);
+    addDockWidget(Qt::RightDockWidgetArea, m_aiDockWidget);
+    m_aiDockWidget->hide();
+
+    refreshAiAssistantContext();
+}
+
 void MainWindow::connectSignals()
 {
     connect(m_dataTableView, &DataTableView::dataChanged,
@@ -397,6 +426,7 @@ bool MainWindow::openFile(const QString &filePath)
 
         // 添加到最近文件列表
         addRecentFile(normalizedPath);
+        refreshAiAssistantContext();
 
         return true;
     } else {
@@ -855,6 +885,23 @@ void MainWindow::onStatistics()
     m_statisticsDialog->exec();
 }
 
+void MainWindow::onAiInsights()
+{
+    refreshAiAssistantContext();
+    if (m_aiDockWidget) {
+        m_aiDockWidget->show();
+        m_aiDockWidget->raise();
+    }
+
+    if (m_aiAssistantPanel) {
+        m_aiAssistantPanel->focusComposer();
+    }
+
+    if (AIInsightService::configuredApiKey().isEmpty()) {
+        statusBar()->showMessage("AI 未配置 API Key，可在 设置 -> AI 中填写。", 5000);
+    }
+}
+
 void MainWindow::onFilterData()
 {
     if (!m_dataTableView->hasData()) {
@@ -934,12 +981,14 @@ void MainWindow::onDataChanged()
         refreshCurrentChart();
     }
     updateDataInfoLabel();  // 更新行列数（以防数据结构变化）
+    refreshAiAssistantContext();
 }
 
 void MainWindow::onViewChanged()
 {
     updateDataInfoLabel();
     refreshCurrentChart();
+    refreshAiAssistantContext();
 }
 
 void MainWindow::onSelectionChanged()
@@ -953,6 +1002,7 @@ void MainWindow::onFileLoaded(const QString &filePath)
 {
     Q_UNUSED(filePath);
     refreshChartColumnList();
+    refreshAiAssistantContext();
 }
 
 void MainWindow::onChartColumnChanged(int row)
@@ -1320,6 +1370,7 @@ bool MainWindow::switchToDocument(int index)
     updateDocumentList();
     updateDataInfoLabel();
     m_statusLabel->setText(QString("当前文档：%1").arg(newDoc->fileName));
+    refreshAiAssistantContext();
     return true;
 }
 
@@ -1382,6 +1433,7 @@ bool MainWindow::closeDocument(int index)
             updateWindowTitle();
             m_fileInfoLabel->clear();
             m_statusLabel->setText("当前没有打开的文档");
+            refreshAiAssistantContext();
             updateDataInfoLabel();
         } else {
             const int newIndex = qMin(index, m_documents.size() - 1);
@@ -1497,6 +1549,25 @@ void MainWindow::refreshCurrentChart()
     }
 
     onChartColumnChanged(row);
+}
+
+void MainWindow::refreshAiAssistantContext()
+{
+    if (!m_aiAssistantPanel || !m_dataTableView) {
+        return;
+    }
+
+    if (!m_dataTableView->hasData()) {
+        m_aiAssistantPanel->setContext(QSharedPointer<Core::TableData>(), false, QString());
+        return;
+    }
+
+    const bool useVisibleData = m_dataTableView->hasActiveFilter();
+    const auto snapshot = m_dataTableView->snapshotData(useVisibleData);
+    const QString fileName = m_currentFilePath.isEmpty()
+                                 ? QString()
+                                 : QFileInfo(m_currentFilePath).fileName();
+    m_aiAssistantPanel->setContext(snapshot, useVisibleData, fileName);
 }
 
 void MainWindow::onDocumentListItemChanged(int currentRow)
