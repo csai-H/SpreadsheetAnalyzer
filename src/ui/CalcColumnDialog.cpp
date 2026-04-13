@@ -2,11 +2,9 @@
 
 #include "DataTableView.h"
 
-#include <QAbstractItemView>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
-#include <QListWidgetItem>
 #include <QMessageBox>
 #include <QVBoxLayout>
 
@@ -31,7 +29,10 @@ bool nearlyZero(double value)
 CalcColumnDialog::CalcColumnDialog(QTableView* tableView, QWidget* parent)
     : QDialog(parent)
     , m_tableView(tableView)
-    , m_sourceColumnsList(nullptr)
+    , m_leftOperandLabel(nullptr)
+    , m_leftOperandCombo(nullptr)
+    , m_rightOperandLabel(nullptr)
+    , m_rightOperandCombo(nullptr)
     , m_calculatedColumnsList(nullptr)
     , m_operationCombo(nullptr)
     , m_columnNameEdit(nullptr)
@@ -55,9 +56,22 @@ void CalcColumnDialog::setupUI()
 
     auto* sourceGroup = new QGroupBox(QStringLiteral("源列"));
     auto* sourceLayout = new QVBoxLayout();
-    m_sourceColumnsList = new QListWidget();
-    m_sourceColumnsList->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    sourceLayout->addWidget(m_sourceColumnsList);
+    auto* operandLayout = new QFormLayout();
+
+    m_leftOperandLabel = new QLabel(QStringLiteral("第一列:"));
+    m_leftOperandCombo = new QComboBox();
+    operandLayout->addRow(m_leftOperandLabel, m_leftOperandCombo);
+
+    m_rightOperandLabel = new QLabel(QStringLiteral("第二列:"));
+    m_rightOperandCombo = new QComboBox();
+    operandLayout->addRow(m_rightOperandLabel, m_rightOperandCombo);
+
+    sourceLayout->addLayout(operandLayout);
+
+    auto* hintLabel = new QLabel(QStringLiteral("运算顺序以这里为准，例如“分子列 / 分母列”。"));
+    hintLabel->setWordWrap(true);
+    sourceLayout->addWidget(hintLabel);
+
     sourceGroup->setLayout(sourceLayout);
     layout->addWidget(sourceGroup);
 
@@ -111,13 +125,22 @@ void CalcColumnDialog::setupUI()
 void CalcColumnDialog::updateAvailableColumns()
 {
     m_availableColumns.clear();
-    if (m_sourceColumnsList) {
-        m_sourceColumnsList->clear();
+    if (m_leftOperandCombo) {
+        m_leftOperandCombo->clear();
+    }
+    if (m_rightOperandCombo) {
+        m_rightOperandCombo->clear();
     }
 
-    if (!m_tableView || !m_sourceColumnsList) {
+    if (!m_tableView || !m_leftOperandCombo || !m_rightOperandCombo) {
         return;
     }
+
+    auto appendColumn = [this](const QString& header, int column) {
+        m_availableColumns.append(header);
+        m_leftOperandCombo->addItem(header, column);
+        m_rightOperandCombo->addItem(header, column);
+    };
 
     if (auto* dataView = qobject_cast<DataTableView*>(m_tableView)) {
         const QStringList headers = dataView->columnHeaders();
@@ -126,9 +149,10 @@ void CalcColumnDialog::updateAvailableColumns()
             const QString header = headers.at(column).trimmed().isEmpty()
                                        ? fallbackColumnName(column)
                                        : headers.at(column);
-            m_availableColumns.append(header);
-            auto* item = new QListWidgetItem(header, m_sourceColumnsList);
-            item->setData(Qt::UserRole, column);
+            appendColumn(header, column);
+        }
+        if (m_rightOperandCombo->count() > 1) {
+            m_rightOperandCombo->setCurrentIndex(1);
         }
         return;
     }
@@ -144,9 +168,11 @@ void CalcColumnDialog::updateAvailableColumns()
         if (header.isEmpty()) {
             header = fallbackColumnName(column);
         }
-        m_availableColumns.append(header);
-        auto* item = new QListWidgetItem(header, m_sourceColumnsList);
-        item->setData(Qt::UserRole, column);
+        appendColumn(header, column);
+    }
+
+    if (m_rightOperandCombo->count() > 1) {
+        m_rightOperandCombo->setCurrentIndex(1);
     }
 }
 
@@ -407,11 +433,47 @@ void CalcColumnDialog::onOperationChanged(int index)
     const auto type = static_cast<CalculationType>(index);
     const int requiredColumns = requiredColumnCount(type);
 
-    if (m_sourceColumnsList) {
-        m_sourceColumnsList->setSelectionMode(
-            requiredColumns == 1 ? QAbstractItemView::SingleSelection
-                                 : QAbstractItemView::ExtendedSelection);
-        m_sourceColumnsList->clearSelection();
+    if (m_leftOperandLabel && m_rightOperandLabel) {
+        switch (type) {
+        case Add:
+            m_leftOperandLabel->setText(QStringLiteral("第一列:"));
+            m_rightOperandLabel->setText(QStringLiteral("第二列:"));
+            break;
+        case Subtract:
+            m_leftOperandLabel->setText(QStringLiteral("被减数列:"));
+            m_rightOperandLabel->setText(QStringLiteral("减数列:"));
+            break;
+        case Multiply:
+            m_leftOperandLabel->setText(QStringLiteral("第一列:"));
+            m_rightOperandLabel->setText(QStringLiteral("第二列:"));
+            break;
+        case Divide:
+            m_leftOperandLabel->setText(QStringLiteral("被除数列:"));
+            m_rightOperandLabel->setText(QStringLiteral("除数列:"));
+            break;
+        case Percentage:
+            m_leftOperandLabel->setText(QStringLiteral("分子列:"));
+            m_rightOperandLabel->setText(QStringLiteral("分母列:"));
+            break;
+        case Difference:
+        case GrowthRate:
+            m_leftOperandLabel->setText(QStringLiteral("目标列:"));
+            m_rightOperandLabel->setText(QStringLiteral("第二列:"));
+            break;
+        }
+    }
+
+    if (m_rightOperandLabel) {
+        m_rightOperandLabel->setVisible(requiredColumns == 2);
+    }
+    if (m_rightOperandCombo && m_leftOperandCombo) {
+        m_rightOperandCombo->setVisible(requiredColumns == 2);
+        if (requiredColumns == 2
+            && m_rightOperandCombo->count() > 1
+            && m_rightOperandCombo->currentIndex() == m_leftOperandCombo->currentIndex()) {
+            m_rightOperandCombo->setCurrentIndex((m_leftOperandCombo->currentIndex() + 1)
+                                                 % m_rightOperandCombo->count());
+        }
     }
 
     if (m_columnNameEdit) {
@@ -451,14 +513,8 @@ void CalcColumnDialog::onAddColumn()
 
     const auto type = static_cast<CalculationType>(m_operationCombo->currentIndex());
     const int expectedColumns = requiredColumnCount(type);
-    const QList<QListWidgetItem*> selectedItems = m_sourceColumnsList->selectedItems();
-    if (selectedItems.size() != expectedColumns) {
-        QMessageBox::warning(
-            this,
-            QStringLiteral("错误"),
-            expectedColumns == 1
-                ? QStringLiteral("当前计算类型需要且只能选择 1 列源数据。")
-                : QStringLiteral("当前计算类型需要且只能选择 2 列源数据。"));
+    if (!m_leftOperandCombo || (expectedColumns == 2 && !m_rightOperandCombo)) {
+        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("源列选择控件未正确初始化。"));
         return;
     }
 
@@ -484,11 +540,27 @@ void CalcColumnDialog::onAddColumn()
     spec.type = type;
 
     QVector<int> sourceColumns;
-    sourceColumns.reserve(selectedItems.size());
-    for (QListWidgetItem* item : selectedItems) {
-        sourceColumns.append(item->data(Qt::UserRole).toInt());
+    sourceColumns.reserve(expectedColumns);
+
+    if (m_leftOperandCombo->currentIndex() < 0) {
+        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("请选择有效的源列。"));
+        return;
     }
-    std::sort(sourceColumns.begin(), sourceColumns.end());
+    const int leftColumn = m_leftOperandCombo->currentData().toInt();
+    sourceColumns.append(leftColumn);
+
+    if (expectedColumns == 2) {
+        if (m_rightOperandCombo->currentIndex() < 0) {
+            QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("请选择有效的第二列。"));
+            return;
+        }
+        const int rightColumn = m_rightOperandCombo->currentData().toInt();
+        if (leftColumn == rightColumn) {
+            QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("当前计算类型需要选择两个不同的源列。"));
+            return;
+        }
+        sourceColumns.append(rightColumn);
+    }
     spec.sourceColumns = sourceColumns;
 
     m_pendingCalculations.append(spec);

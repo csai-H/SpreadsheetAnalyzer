@@ -3,6 +3,7 @@
 
 #include <QComboBox>
 #include <QDialog>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
@@ -56,7 +57,10 @@ private:
     QVector<QString> m_availableColumns;
     QVector<CalculationSpec> m_pendingCalculations;
 
-    QListWidget* m_sourceColumnsList;
+    QLabel* m_leftOperandLabel;
+    QComboBox* m_leftOperandCombo;
+    QLabel* m_rightOperandLabel;
+    QComboBox* m_rightOperandCombo;
     QListWidget* m_calculatedColumnsList;
     QComboBox* m_operationCombo;
     QLineEdit* m_columnNameEdit;
