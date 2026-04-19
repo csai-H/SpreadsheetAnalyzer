@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
 
     // 设置应用程序信息
     app.setApplicationName("SpreadsheetAnalyzer");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion("1.1.0");
     app.setOrganizationName("SpreadsheetAnalyzer");
     app.setOrganizationDomain("spreadsheetanalyzer.org");
 

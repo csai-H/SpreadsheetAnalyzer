@@ -8,7 +8,12 @@ namespace Statistics {
 
 MatrixOperations::Matrix MatrixOperations::add(const Matrix& A, const Matrix& B)
 {
-    if (A.size() != B.size() || (A.size() > 0 && A[0].size() != B[0].size())) {
+    if (A.isEmpty() || B.isEmpty()) {
+        qWarning() << "矩阵为空";
+        return Matrix();
+    }
+
+    if (A.size() != B.size() || A[0].size() != B[0].size()) {
         qWarning() << "矩阵维度不匹配";
         return Matrix();
     }
@@ -26,7 +31,12 @@ MatrixOperations::Matrix MatrixOperations::add(const Matrix& A, const Matrix& B)
 
 MatrixOperations::Matrix MatrixOperations::subtract(const Matrix& A, const Matrix& B)
 {
-    if (A.size() != B.size() || (A.size() > 0 && A[0].size() != B[0].size())) {
+    if (A.isEmpty() || B.isEmpty()) {
+        qWarning() << "矩阵为空";
+        return Matrix();
+    }
+
+    if (A.size() != B.size() || A[0].size() != B[0].size()) {
         qWarning() << "矩阵维度不匹配";
         return Matrix();
     }
@@ -44,6 +54,10 @@ MatrixOperations::Matrix MatrixOperations::subtract(const Matrix& A, const Matri
 
 MatrixOperations::Matrix MatrixOperations::multiply(const Matrix& A, double scalar)
 {
+    if (A.isEmpty()) {
+        return Matrix();
+    }
+
     Matrix result(A.size(), QVector<double>(A[0].size()));
 
     for (int i = 0; i < A.size(); ++i) {
@@ -57,6 +71,11 @@ MatrixOperations::Matrix MatrixOperations::multiply(const Matrix& A, double scal
 
 MatrixOperations::Matrix MatrixOperations::multiply(const Matrix& A, const Matrix& B)
 {
+    if (A.isEmpty() || B.isEmpty()) {
+        qWarning() << "矩阵为空";
+        return Matrix();
+    }
+
     int rowsA = A.size();
     int colsA = A[0].size();
     int rowsB = B.size();
@@ -82,6 +101,10 @@ MatrixOperations::Matrix MatrixOperations::multiply(const Matrix& A, const Matri
 
 MatrixOperations::Matrix MatrixOperations::transpose(const Matrix& A)
 {
+    if (A.isEmpty()) {
+        return Matrix();
+    }
+
     int rows = A.size();
     int cols = A[0].size();
 

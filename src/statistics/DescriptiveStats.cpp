@@ -252,21 +252,29 @@ StatisticResult DescriptiveStats::skewness(const QVector<double>& data)
     auto meanResult = mean(validData);
     auto stdResult = standardDeviation(validData, true);
 
+    if (!meanResult.isValid || !stdResult.isValid) {
+        return StatisticResult::error("无法计算偏度");
+    }
+
     double meanValue = meanResult.value;
     double stdValue = stdResult.value;
 
     if (stdValue == 0.0) {
-        return StatisticResult::ok(0.0);
+        return StatisticResult::error("标准差为零，无法计算偏度");
     }
 
-    double sum = 0.0;
+    double m3 = 0.0;
     for (double value : validData) {
-        double standardized = (value - meanValue) / stdValue;
-        sum += standardized * standardized * standardized;
+        double diff = value - meanValue;
+        m3 += diff * diff * diff;
     }
 
     int n = validData.size();
-    return StatisticResult::ok(sum / n);
+    // 样本偏度 (Fisher's adjusted): G₁ = (√(n(n-1)) / (n-2)) × (m₃ / (n × s³))
+    double s3 = stdValue * stdValue * stdValue;
+    double skew = (qSqrt(static_cast<double>(n * (n - 1))) / (n - 2)) * (m3 / (n * s3));
+
+    return StatisticResult::ok(skew);
 }
 
 StatisticResult DescriptiveStats::kurtosis(const QVector<double>& data)
@@ -279,21 +287,31 @@ StatisticResult DescriptiveStats::kurtosis(const QVector<double>& data)
     auto meanResult = mean(validData);
     auto stdResult = standardDeviation(validData, true);
 
+    if (!meanResult.isValid || !stdResult.isValid) {
+        return StatisticResult::error("无法计算峰度");
+    }
+
     double meanValue = meanResult.value;
     double stdValue = stdResult.value;
 
     if (stdValue == 0.0) {
-        return StatisticResult::error("标准差为零");
+        return StatisticResult::error("标准差为零，无法计算峰度");
     }
 
-    double sum = 0.0;
+    double m4 = 0.0;
     for (double value : validData) {
-        double standardized = (value - meanValue) / stdValue;
-        sum += standardized * standardized * standardized * standardized;
+        double diff = value - meanValue;
+        m4 += diff * diff * diff * diff;
     }
 
     int n = validData.size();
-    return StatisticResult::ok(sum / n);
+    // 样本超额峰度 (Fisher's adjusted):
+    // G₂ = ((n+1)n / ((n-1)(n-2)(n-3))) × (m₄/s⁴ - 3(n-1)²/n)
+    double s4 = stdValue * stdValue * stdValue * stdValue;
+    double kurt = (static_cast<double>((n + 1) * n) / ((n - 1) * (n - 2) * (n - 3)))
+                  * (m4 / (n * s4) - 3.0 * (n - 1) * (n - 1) / static_cast<double>(n));
+
+    return StatisticResult::ok(kurt);
 }
 
 // === 其他统计量 ===
